@@ -6,6 +6,8 @@ if (file_exists(__DIR__ . '/config.php') && !file_exists(__FILE__)) {
 }
 
 $errors = [];
+$scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$guessed_url = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? '');
 $old    = $_POST;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -192,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <input type="text" name="app_name" value="<?= htmlspecialchars($old['app_name'] ?? 'Forum') ?>" required maxlength="100">
 
     <label>Site URL <small>(no trailing slash, e.g. https://example.com)</small></label>
-    <input type="url" name="app_url" value="<?= htmlspecialchars($old['app_url'] ?? '') ?>" required placeholder="https://example.com">
+    <input type="url" name="app_url" value="<?= htmlspecialchars($old['app_url'] ?? $guessed_url) ?>" required placeholder="https://example.com">
 
     <label>Webhook secret <small>(optional — set this in GitHub repo Settings → Webhooks too)</small></label>
     <input type="text" name="wh_secret" value="<?= htmlspecialchars($old['wh_secret'] ?? '') ?>" autocomplete="off">
