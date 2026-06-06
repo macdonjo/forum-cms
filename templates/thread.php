@@ -13,7 +13,7 @@
             &middot; <?= (int)$thread['view_count'] ?> views
         </div>
     </header>
-    <div class="post-body"><?= nl2br(h($thread['body'])) ?></div>
+    <div class="post-body"><?= bbcode($thread['body']) ?></div>
     <?php if ($thread['image']): ?>
     <div class="post-image">
         <img src="/uploads/<?= h($thread['image']) ?>" alt="" loading="lazy">
@@ -58,7 +58,7 @@
             </form>
             <?php endif ?>
         </div>
-        <div class="post-body"><?= nl2br(h($r['body'])) ?></div>
+        <div class="post-body"><?= bbcode($r['body']) ?></div>
         <?php if ($r['image']): ?>
         <div class="post-image">
             <img src="/uploads/<?= h($r['image']) ?>" alt="" loading="lazy">
@@ -77,9 +77,16 @@
     <form method="post" action="/reply" enctype="multipart/form-data">
         <?= csrf_field() ?>
         <input type="hidden" name="thread_id" value="<?= (int)$thread['id'] ?>">
-        <textarea name="body" rows="6" placeholder="Write your reply…" required></textarea>
-        <div class="form-row">
-            <label>Image (optional) <input type="file" name="image" accept="image/*"></label>
+        <div class="bb-editor">
+            <div class="bb-toolbar">
+                <button type="button" class="bb-btn" onclick="bbWrap(this,'[b]','[/b]')"><b>B</b></button>
+                <button type="button" class="bb-btn" onclick="bbWrap(this,'[i]','[/i]')"><i>I</i></button>
+                <button type="button" class="bb-btn" onclick="bbImage(this)">+ Image</button>
+                <input type="file" class="bb-img-input" accept="image/*" style="display:none">
+            </div>
+            <textarea name="body" rows="6" placeholder="Write your reply…" required></textarea>
+        </div>
+        <div class="form-row" style="margin-top:10px">
             <button type="submit" class="btn">Post Reply</button>
         </div>
     </form>

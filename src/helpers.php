@@ -100,6 +100,19 @@ function upload_image(array $file): ?string {
     return date('Y/m') . '/' . $name;
 }
 
+function bbcode(string $text): string {
+    $s = h($text);
+    $s = nl2br($s);
+    $s = preg_replace('/\[b\](.*?)\[\/b\]/si',  '<strong>$1</strong>', $s);
+    $s = preg_replace('/\[i\](.*?)\[\/i\]/si',  '<em>$1</em>',         $s);
+    $s = preg_replace_callback(
+        '/\[img\]((?:https?:\/\/|\/uploads\/)[^\]]+)\[\/img\]/i',
+        fn($m) => '<img src="' . $m[1] . '" alt="" loading="lazy" class="bb-img">',
+        $s
+    );
+    return $s;
+}
+
 function role_badge(string $role): string {
     return match($role) {
         'admin'     => ' <span class="badge badge-admin">Admin</span>',

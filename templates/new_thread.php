@@ -27,11 +27,15 @@
     </div>
     <div class="form-group">
         <label for="body">Body</label>
-        <textarea id="body" name="body" rows="12" required><?= h($old['body'] ?? '') ?></textarea>
-    </div>
-    <div class="form-group">
-        <label for="image">Image (optional, max 8 MB)</label>
-        <input id="image" type="file" name="image" accept="image/*">
+        <div class="bb-editor">
+            <div class="bb-toolbar">
+                <button type="button" class="bb-btn" onclick="bbWrap(this,'[b]','[/b]')"><b>B</b></button>
+                <button type="button" class="bb-btn" onclick="bbWrap(this,'[i]','[/i]')"><i>I</i></button>
+                <button type="button" class="bb-btn" onclick="bbImage(this)">+ Image</button>
+                <input type="file" class="bb-img-input" accept="image/*" style="display:none">
+            </div>
+            <textarea id="body" name="body" rows="12" required><?= h($old['body'] ?? '') ?></textarea>
+        </div>
     </div>
     <button type="submit" class="btn">Post Thread</button>
 </form>

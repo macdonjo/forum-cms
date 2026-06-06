@@ -280,7 +280,7 @@ $router->add('POST', '/cp/section', function() {
     $order = (int)($_POST['display_order'] ?? 0);
     if (!$name) { redirect('/cp'); return; }
 
-    $reserved = ['login','register','logout','new-thread','reply','admin','cp','webhook',
+    $reserved = ['login','register','logout','new-thread','reply','upload','admin','cp','webhook',
                  'api','sitemap','robots','assets','uploads','install','config'];
     $candidate = unique_slug('sections', $name);
     if (in_array($candidate, $reserved, true)) { redirect('/cp'); return; }
@@ -398,6 +398,21 @@ $router->add('GET', '/robots.txt', function() use ($config) {
     echo "Disallow: /admin\n";
     echo "Disallow: /webhook\n";
     echo "\nSitemap: " . $config['app_url'] . "/sitemap.xml\n";
+    exit;
+});
+
+// ── Image upload (AJAX from BB toolbar) ───────────────────────────────────────
+$router->add('POST', '/upload', function() {
+    Auth::require();
+    csrf_verify();
+    $path = !empty($_FILES['image']['name']) ? upload_image($_FILES['image']) : null;
+    header('Content-Type: application/json');
+    if (!$path) {
+        http_response_code(422);
+        echo json_encode(['error' => 'Invalid or missing image.']);
+    } else {
+        echo json_encode(['url' => '/uploads/' . $path]);
+    }
     exit;
 });
 

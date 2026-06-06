@@ -33,6 +33,7 @@
     <?php if (!empty($description)): ?>
     <meta name="twitter:description" content="<?= h($description) ?>">
     <?php endif ?>
+    <meta name="csrf" content="<?= h(csrf_token()) ?>">
     <link rel="stylesheet" href="/assets/style.css">
     <?php if (!empty($schema)): ?>
     <script type="application/ld+json"><?= $schema ?></script>
@@ -69,5 +70,37 @@
         <p>&copy; <?= date('Y') ?> <?= h($config['app_name']) ?> &middot; v<?= h(Updater::currentVersion()) ?></p>
     </div>
 </footer>
+<script>
+function bbWrap(btn, open, close) {
+    var ta = btn.closest('.bb-editor').querySelector('textarea');
+    var s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0,s) + open + ta.value.slice(s,e) + close + ta.value.slice(e);
+    ta.selectionStart = s + open.length;
+    ta.selectionEnd   = s + open.length + (e - s);
+    ta.focus();
+}
+function bbImage(btn) {
+    var input = btn.parentElement.querySelector('.bb-img-input');
+    input.onchange = function() {
+        if (!input.files[0]) return;
+        var fd = new FormData();
+        fd.append('image', input.files[0]);
+        fd.append('csrf', document.querySelector('meta[name="csrf"]').content);
+        fetch('/upload', {method:'POST', body:fd})
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                if (!d.url) return;
+                var ta = btn.closest('.bb-editor').querySelector('textarea');
+                var pos = ta.selectionStart;
+                var tag = '[img]' + d.url + '[/img]';
+                ta.value = ta.value.slice(0,pos) + tag + ta.value.slice(pos);
+                ta.selectionStart = ta.selectionEnd = pos + tag.length;
+                ta.focus();
+            });
+        input.value = '';
+    };
+    input.click();
+}
+</script>
 </body>
 </html>
