@@ -30,6 +30,7 @@ if ($event !== '') {
 }
 
 // Manual trigger or GitHub push — run the update
+header('Cache-Control: no-store');
 Updater::log('Update triggered (' . ($event === 'push' ? 'webhook' : 'manual') . ')');
 $ok = Updater::applyZip(Updater::fetch(Updater::ZIP_URL));
 if ($ok) file_put_contents(ROOT . '/.update_check', time());
