@@ -34,7 +34,7 @@
     <meta name="twitter:description" content="<?= h($description) ?>">
     <?php endif ?>
     <meta name="csrf" content="<?= h(csrf_token()) ?>">
-    <link rel="stylesheet" href="/assets/style.css">
+    <link rel="stylesheet" href="/assets/style.css?v=<?= h(Updater::currentVersion()) ?>">
     <?php if (!empty($schema)): ?>
     <script type="application/ld+json"><?= $schema ?></script>
     <?php endif ?>
@@ -71,6 +71,15 @@
     </div>
 </footer>
 <script>
+document.querySelectorAll('time[datetime]').forEach(function(el) {
+    var d = new Date(el.getAttribute('datetime'));
+    if (isNaN(d)) return;
+    var opts = el.dataset.fmt === 'datetime'
+        ? {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}
+        : {month:'short', day:'numeric', year:'numeric'};
+    el.textContent = new Intl.DateTimeFormat(undefined, opts).format(d);
+});
+
 function bbWrap(btn, open, close) {
     var ta = btn.closest('.bb-editor').querySelector('textarea');
     var s = ta.selectionStart, e = ta.selectionEnd;

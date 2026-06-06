@@ -27,7 +27,9 @@
             </td>
             <td class="stat-cell"><?= (int)$s['thread_count'] ?></td>
             <td class="stat-cell">
-                <?= $s['last_activity'] ? date('M j, Y', strtotime($s['last_activity'])) : '—' ?>
+                <?php if ($s['last_activity']): ?>
+                <time datetime="<?= date('c', strtotime($s['last_activity'])) ?>" data-fmt="date"><?= date('M j, Y', strtotime($s['last_activity'])) ?></time>
+                <?php else: ?>—<?php endif ?>
             </td>
         </tr>
     <?php endforeach ?>

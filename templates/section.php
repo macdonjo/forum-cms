@@ -37,7 +37,7 @@
                 <span class="thread-author">by <?= h($t['username']) ?></span>
             </td>
             <td class="stat-cell"><?= (int)$t['reply_count'] ?></td>
-            <td class="stat-cell"><?= date('M j, Y', strtotime($t['updated_at'])) ?></td>
+            <td class="stat-cell"><time datetime="<?= date('c', strtotime($t['updated_at'])) ?>" data-fmt="date"><?= date('M j, Y', strtotime($t['updated_at'])) ?></time></td>
         </tr>
     <?php endforeach ?>
     </tbody>

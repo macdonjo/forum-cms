@@ -9,7 +9,7 @@
         <h1><?= h($thread['title']) ?></h1>
         <div class="post-meta">
             by <strong><?= h($thread['author']) ?></strong><?= role_badge($thread['author_role']) ?>
-            &middot; <?= date('M j, Y \a\t g:i a', strtotime($thread['created_at'])) ?>
+            &middot; <time datetime="<?= date('c', strtotime($thread['created_at'])) ?>" data-fmt="datetime"><?= date('M j, Y \a\t g:i a', strtotime($thread['created_at'])) ?></time>
             &middot; <?= (int)$thread['view_count'] ?> views
         </div>
     </header>
@@ -49,7 +49,7 @@
     <article class="post reply">
         <div class="post-meta">
             <strong><?= h($r['author']) ?></strong><?= role_badge($r['author_role']) ?>
-            &middot; <?= date('M j, Y \a\t g:i a', strtotime($r['created_at'])) ?>
+            &middot; <time datetime="<?= date('c', strtotime($r['created_at'])) ?>" data-fmt="datetime"><?= date('M j, Y \a\t g:i a', strtotime($r['created_at'])) ?></time>
             <?php if (Auth::isMod()): ?>
             <form method="post" action="/reply/delete" class="inline-delete" onsubmit="return confirm('Delete this reply?')">
                 <?= csrf_field() ?>
