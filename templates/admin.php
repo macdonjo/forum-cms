@@ -10,7 +10,7 @@
         <button onclick="navigator.clipboard.writeText('<?= h($api_key) ?>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)"
                 class="btn" type="button">Copy</button>
     </div>
-    <form method="post" action="/admin/api/regenerate" onsubmit="return confirm('Regenerate API key? The old key will stop working immediately.')">
+    <form method="post" action="/cp/api/regenerate" onsubmit="return confirm('Regenerate API key? The old key will stop working immediately.')">
         <?= csrf_field() ?>
         <button type="submit" class="btn btn-danger">Regenerate Key</button>
     </form>
@@ -37,7 +37,7 @@
         &nbsp;&middot;&nbsp;
         Updates apply automatically within 24 hours of a release.
     </p>
-    <form method="post" action="/admin/update">
+    <form method="post" action="/cp/update">
         <?= csrf_field() ?>
         <button type="submit" class="btn">Update Now</button>
     </form>
@@ -63,7 +63,7 @@
             <td style="font-size:.85rem;color:#666"><?= date('M j, Y', strtotime($u['created_at'])) ?></td>
             <td>
                 <?php if ($u['role'] !== 'admin'): ?>
-                <form method="post" action="/admin/user/role">
+                <form method="post" action="/cp/user/role">
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
                     <select name="role" onchange="this.form.submit()" style="font:inherit;padding:4px;border:1px solid #ccc;border-radius:4px">
@@ -96,7 +96,7 @@
             <td><code><?= h($s['slug']) ?></code></td>
             <td><?= (int)$s['display_order'] ?></td>
             <td>
-                <form method="post" action="/admin/section/delete"
+                <form method="post" action="/cp/section/delete"
                       onsubmit="return confirm('Delete “<?= h($s['name']) ?>” and all its threads?')">
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
@@ -110,7 +110,7 @@
     <?php endif ?>
 
     <h3>Add Section</h3>
-    <form method="post" action="/admin/section" class="post-form">
+    <form method="post" action="/cp/section" class="post-form">
         <?= csrf_field() ?>
         <div class="form-group">
             <label>Name <input type="text" name="name" required maxlength="100"></label>

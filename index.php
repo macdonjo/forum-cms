@@ -237,7 +237,7 @@ $router->add('GET', '/logout', function() {
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
-$router->add('GET', '/admin', function() use ($config) {
+$router->add('GET', '/cp', function() use ($config) {
     Auth::requireAdmin();
     $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
     $users    = DB::all("SELECT id, username, email, role, created_at FROM users ORDER BY created_at ASC");
@@ -251,14 +251,14 @@ $router->add('GET', '/admin', function() use ($config) {
     ]);
 });
 
-$router->add('POST', '/admin/api/regenerate', function() {
+$router->add('POST', '/cp/api/regenerate', function() {
     Auth::requireAdmin();
     csrf_verify();
     DB::execute("UPDATE settings SET value = ? WHERE `key` = 'api_key'", [API::generateKey()]);
-    redirect('/admin');
+    redirect('/cp');
 });
 
-$router->add('POST', '/admin/update', function() use ($config) {
+$router->add('POST', '/cp/update', function() use ($config) {
     Auth::requireAdmin();
     csrf_verify();
 
@@ -275,42 +275,42 @@ $router->add('POST', '/admin/update', function() use ($config) {
     ]);
 });
 
-$router->add('POST', '/admin/section', function() {
+$router->add('POST', '/cp/section', function() {
     Auth::requireAdmin();
     csrf_verify();
     $name  = trim($_POST['name'] ?? '');
     $desc  = trim($_POST['description'] ?? '');
     $order = (int)($_POST['display_order'] ?? 0);
-    if (!$name) { redirect('/admin'); return; }
+    if (!$name) { redirect('/cp'); return; }
 
-    $reserved = ['login','register','logout','new-thread','reply','admin','webhook',
+    $reserved = ['login','register','logout','new-thread','reply','admin','cp','webhook',
                  'api','sitemap','robots','assets','uploads','install','config'];
     $candidate = unique_slug('sections', $name);
-    if (in_array($candidate, $reserved, true)) { redirect('/admin'); return; }
+    if (in_array($candidate, $reserved, true)) { redirect('/cp'); return; }
 
     DB::execute(
         "INSERT INTO sections (name, slug, description, display_order) VALUES (?, ?, ?, ?)",
         [$name, $candidate, $desc ?: null, $order]
     );
-    redirect('/admin');
+    redirect('/cp');
 });
 
-$router->add('POST', '/admin/section/delete', function() {
+$router->add('POST', '/cp/section/delete', function() {
     Auth::requireAdmin();
     csrf_verify();
     $id = (int)($_POST['id'] ?? 0);
     if ($id) DB::execute("DELETE FROM sections WHERE id = ?", [$id]);
-    redirect('/admin');
+    redirect('/cp');
 });
 
-$router->add('POST', '/admin/user/role', function() {
+$router->add('POST', '/cp/user/role', function() {
     Auth::requireAdmin();
     csrf_verify();
     $id   = (int)($_POST['id'] ?? 0);
     $role = $_POST['role'] ?? 'user';
     if (!in_array($role, ['user', 'moderator'])) $role = 'user'; // admin can't be set here
     if ($id) DB::execute("UPDATE users SET role = ? WHERE id = ? AND role != 'admin'", [$role, $id]);
-    redirect('/admin');
+    redirect('/cp');
 });
 
 // ── Mod actions ───────────────────────────────────────────────────────────────
@@ -397,6 +397,7 @@ $router->add('GET', '/robots.txt', function() use ($config) {
     echo "Disallow: /logout\n";
     echo "Disallow: /new-thread\n";
     echo "Disallow: /reply\n";
+    echo "Disallow: /cp\n";
     echo "Disallow: /admin\n";
     echo "Disallow: /webhook\n";
     echo "\nSitemap: " . $config['app_url'] . "/sitemap.xml\n";

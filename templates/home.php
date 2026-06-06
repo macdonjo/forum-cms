@@ -4,7 +4,7 @@
 <p class="empty-state">
     No sections yet.
     <?php if (Auth::check() && Auth::user()['is_admin']): ?>
-    <a href="/admin">Create one in the admin panel.</a>
+    <a href="/cp">Create one in the admin panel.</a>
     <?php endif ?>
 </p>
 <?php else: ?>
