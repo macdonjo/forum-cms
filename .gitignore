@@ -1,5 +1,6 @@
 config.php
 /uploads/
+.update_check
+update.log
 .DS_Store
-*.log
 Thumbs.db

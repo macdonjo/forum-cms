@@ -1,5 +1,26 @@
 <h1>Admin</h1>
 
+<section class="admin-section" style="margin-bottom:20px">
+    <h2>Updates</h2>
+    <p style="margin-bottom:12px;font-size:.9rem;color:#555">
+        Version: <strong><?= h(Updater::currentVersion()) ?></strong>
+        &nbsp;&middot;&nbsp;
+        <?php $checked = Updater::lastChecked(); ?>
+        Last checked: <strong><?= $checked ? date('M j, Y g:i a', $checked) : 'never' ?></strong>
+        &nbsp;&middot;&nbsp;
+        Updates apply automatically within 24 hours of a release.
+    </p>
+    <form method="post" action="/admin/update">
+        <?= csrf_field() ?>
+        <button type="submit" class="btn">Update Now</button>
+    </form>
+    <?php if (!empty($update_msg)): ?>
+    <p style="margin-top:10px;font-size:.9rem;color:<?= $update_msg === 'Updated successfully.' ? '#155724' : '#721c24' ?>">
+        <?= h($update_msg) ?>
+    </p>
+    <?php endif ?>
+</section>
+
 <section class="admin-section">
     <h2>Sections</h2>
 

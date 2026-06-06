@@ -17,8 +17,19 @@ require ROOT . '/src/DB.php';
 require ROOT . '/src/Router.php';
 require ROOT . '/src/Auth.php';
 require ROOT . '/src/helpers.php';
+require ROOT . '/src/Updater.php';
 
 Auth::start();
+
+// Once per day, check for updates after the response is sent so users feel nothing
+if (Updater::shouldCheck()) {
+    register_shutdown_function(function () {
+        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        @set_time_limit(120);
+        @ignore_user_abort(true);
+        Updater::checkAndUpdate();
+    });
+}
 
 $router   = new Router();
 $PER_PAGE = 20;
@@ -299,6 +310,23 @@ $router->add('GET', '/admin', function() use ($config) {
     $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
     render('admin', [
         'sections'    => $sections,
+        'title'       => 'Admin — ' . $config['app_name'],
+        'description' => '',
+    ]);
+});
+
+$router->add('POST', '/admin/update', function() use ($config) {
+    Auth::requireAdmin();
+    csrf_verify();
+
+    $data = Updater::fetch(Updater::ZIP_URL);
+    $ok   = Updater::applyZip($data);
+    if ($ok) file_put_contents(ROOT . '/.update_check', time());
+
+    $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
+    render('admin', [
+        'sections'    => $sections,
+        'update_msg'  => $ok ? 'Updated successfully.' : 'Update failed — check update.log.',
         'title'       => 'Admin — ' . $config['app_name'],
         'description' => '',
     ]);
