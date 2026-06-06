@@ -10,9 +10,10 @@ A minimal, SEO-focused forum. Plain PHP + MySQL, no dependencies.
 
 ## Install
 
-1. Upload all files to your web root (`public_html`, `htdocs`, etc.)
-2. Visit `yoursite.com/install.php`
-3. Fill in your database credentials, site URL, and admin account — done
+1. [Download the latest zip](https://github.com/macdonjo/forum-cms/archive/refs/heads/main.zip) and extract it
+2. Upload all files to your web root (`public_html`, `htdocs`, etc.)
+3. Visit `yoursite.com/install.php`
+4. Fill in your database credentials, site URL, and admin account — done
 
 `install.php` deletes itself when finished. `config.php` is written to the server and never committed to git.
 
