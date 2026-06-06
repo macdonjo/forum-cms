@@ -18,16 +18,28 @@ require ROOT . '/src/Router.php';
 require ROOT . '/src/Auth.php';
 require ROOT . '/src/helpers.php';
 require ROOT . '/src/Updater.php';
+require ROOT . '/src/API.php';
 
 Auth::start();
 
-// Auto-migrate: add role column to existing installs
-$_migration_cols = array_column(DB::all("SHOW COLUMNS FROM users LIKE 'role'"), 'Field');
-if (empty($_migration_cols)) {
+// Auto-migrate: role column
+$_cols = array_column(DB::all("SHOW COLUMNS FROM users LIKE 'role'"), 'Field');
+if (empty($_cols)) {
     DB::execute("ALTER TABLE users ADD COLUMN role ENUM('user','moderator','admin') NOT NULL DEFAULT 'user'");
     DB::execute("UPDATE users SET role = 'admin' WHERE is_admin = 1");
 }
-unset($_migration_cols);
+unset($_cols);
+
+// Auto-migrate: settings table + API key
+$_tables = array_column(DB::all("SHOW TABLES LIKE 'settings'"), 0);
+if (empty($_tables)) {
+    DB::execute("CREATE TABLE settings (
+        `key`  VARCHAR(100) NOT NULL PRIMARY KEY,
+        `value` TEXT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    DB::execute("INSERT INTO settings (`key`, `value`) VALUES ('api_key', ?)", [API::generateKey()]);
+}
+unset($_tables);
 
 // Once per day, check for updates after the response is sent so users feel nothing
 if (Updater::shouldCheck()) {
@@ -317,12 +329,21 @@ $router->add('GET', '/admin', function() use ($config) {
     Auth::requireAdmin();
     $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
     $users    = DB::all("SELECT id, username, email, role, created_at FROM users ORDER BY created_at ASC");
+    $api_key  = DB::one("SELECT value FROM settings WHERE `key` = 'api_key'")['value'] ?? '';
     render('admin', [
         'sections'    => $sections,
         'users'       => $users,
+        'api_key'     => $api_key,
         'title'       => 'Admin — ' . $config['app_name'],
         'description' => '',
     ]);
+});
+
+$router->add('POST', '/admin/api/regenerate', function() {
+    Auth::requireAdmin();
+    csrf_verify();
+    DB::execute("UPDATE settings SET value = ? WHERE `key` = 'api_key'", [API::generateKey()]);
+    redirect('/admin');
 });
 
 $router->add('POST', '/admin/update', function() use ($config) {
@@ -407,6 +428,19 @@ $router->add('POST', '/thread/delete', function() {
 
     DB::execute("DELETE FROM threads WHERE id = ?", [$id]);
     redirect('/s/' . $thread['section_slug']);
+});
+
+// ── API ───────────────────────────────────────────────────────────────────────
+$router->add('POST', '/api/update', function() {
+    API::auth();
+    $before = Updater::currentVersion();
+    $ok     = Updater::applyZip(Updater::fetch(Updater::ZIP_URL));
+    if ($ok) file_put_contents(ROOT . '/.update_check', time());
+    $after  = Updater::currentVersion();
+    API::respond($ok
+        ? ['success' => true,  'version' => $after, 'previous' => $before]
+        : ['success' => false, 'error'   => 'Update failed. Check update.log.']
+    );
 });
 
 // ── Sitemap ───────────────────────────────────────────────────────────────────

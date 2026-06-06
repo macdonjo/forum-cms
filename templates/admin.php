@@ -1,6 +1,33 @@
 <h1>Admin</h1>
 
 <section class="admin-section" style="margin-bottom:20px">
+    <h2>API</h2>
+    <p style="margin-bottom:12px;font-size:.9rem;color:#555">Use this key to authenticate API requests via <code>Authorization: Bearer {key}</code> or <code>?key={key}</code>.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <input type="password" value="<?= h($api_key) ?>" readonly
+               style="flex:1;min-width:200px;font-family:monospace;font-size:.85rem;padding:7px 10px;border:1px solid #ccc;border-radius:4px;background:#f9f9f9"
+               onclick="this.type='text'" title="Click to reveal">
+        <button onclick="navigator.clipboard.writeText('<?= h($api_key) ?>');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)"
+                class="btn" type="button">Copy</button>
+    </div>
+    <form method="post" action="/admin/api/regenerate" onsubmit="return confirm('Regenerate API key? The old key will stop working immediately.')">
+        <?= csrf_field() ?>
+        <button type="submit" class="btn btn-danger">Regenerate Key</button>
+    </form>
+    <h3 style="margin-top:20px">Endpoints</h3>
+    <table class="board-table" style="margin-top:8px">
+        <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr>
+                <td><code>POST</code></td>
+                <td><code><?= h($config['app_url']) ?>/api/update</code></td>
+                <td style="font-size:.85rem">Force-pull latest update from GitHub immediately</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="admin-section" style="margin-bottom:20px">
     <h2>Updates</h2>
     <p style="margin-bottom:12px;font-size:.9rem;color:#555">
         Version: <strong><?= h(Updater::currentVersion()) ?></strong>

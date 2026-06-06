@@ -90,6 +90,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+            $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
+                `key`   VARCHAR(100) NOT NULL PRIMARY KEY,
+                `value` TEXT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("INSERT IGNORE INTO settings (`key`, `value`) VALUES ('api_key', '" . bin2hex(random_bytes(32)) . "')");
+
             // ── Create admin account ──────────────────────────────────────────
             $stmt = $pdo->prepare(
                 "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'admin')"
