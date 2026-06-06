@@ -46,7 +46,7 @@
 </main>
 <footer id="site-footer">
     <div class="container">
-        <p>&copy; <?= date('Y') ?> <?= h($config['app_name']) ?></p>
+        <p>&copy; <?= date('Y') ?> <?= h($config['app_name']) ?> &middot; v<?= h(Updater::currentVersion()) ?></p>
     </div>
 </footer>
 </body>
