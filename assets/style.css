@@ -185,7 +185,8 @@ main.container { padding: 24px 16px; min-height: calc(100vh - 120px); }
 
 /* ── Responsive ── */
 @media (max-width: 600px) {
-    .stat-cell { display: none; }
+    .board-table th, .board-table td { padding: 10px 8px; }
+    .stat-cell { font-size: 0.78rem; white-space: normal; }
     .post { padding: 14px 16px; }
     .reply-form { padding: 14px 16px; }
     #site-header nav { gap: 10px; }
