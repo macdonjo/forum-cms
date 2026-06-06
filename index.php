@@ -31,15 +31,11 @@ if (empty($_cols)) {
 unset($_cols);
 
 // Auto-migrate: settings table + API key
-$_tables = array_column(DB::all("SHOW TABLES LIKE 'settings'"), 0);
-if (empty($_tables)) {
-    DB::execute("CREATE TABLE settings (
-        `key`  VARCHAR(100) NOT NULL PRIMARY KEY,
-        `value` TEXT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    DB::execute("INSERT INTO settings (`key`, `value`) VALUES ('api_key', ?)", [API::generateKey()]);
-}
-unset($_tables);
+DB::execute("CREATE TABLE IF NOT EXISTS settings (
+    `key`  VARCHAR(100) NOT NULL PRIMARY KEY,
+    `value` TEXT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+DB::execute("INSERT IGNORE INTO settings (`key`, `value`) VALUES ('api_key', ?)", [API::generateKey()]);
 
 // Once per day, check for updates after the response is sent so users feel nothing
 if (Updater::shouldCheck()) {
