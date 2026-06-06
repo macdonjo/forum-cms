@@ -79,6 +79,7 @@ $router->add('GET', '/new-thread', function() use ($config) {
         'preselect'   => $preselect,
         'title'       => 'New Thread — ' . $config['app_name'],
         'description' => '',
+        'noindex'     => true,
     ]);
 });
 
@@ -165,7 +166,7 @@ $router->add('POST', '/reply', function() {
 // ── Login ─────────────────────────────────────────────────────────────────────
 $router->add('GET', '/login', function() use ($config) {
     if (Auth::check()) redirect('/');
-    render('login', ['title' => 'Login — ' . $config['app_name'], 'description' => '']);
+    render('login', ['title' => 'Login — ' . $config['app_name'], 'description' => '', 'noindex' => true]);
 });
 
 $router->add('POST', '/login', function() use ($config) {
@@ -190,7 +191,7 @@ $router->add('POST', '/login', function() use ($config) {
 // ── Register ──────────────────────────────────────────────────────────────────
 $router->add('GET', '/register', function() use ($config) {
     if (Auth::check()) redirect('/');
-    render('register', ['title' => 'Register — ' . $config['app_name'], 'description' => '']);
+    render('register', ['title' => 'Register — ' . $config['app_name'], 'description' => '', 'noindex' => true]);
 });
 
 $router->add('POST', '/register', function() use ($config) {
@@ -420,14 +421,22 @@ $router->add('GET', '/{slug}', function(array $p) use ($config, $PER_PAGE) {
 
     $base = $config['app_url'] . '/' . $section['slug'];
     render('section', [
-        'section'     => $section,
-        'threads'     => $threads,
-        'pg'          => $pg,
-        'title'       => $section['name'] . ' — ' . $config['app_name'],
-        'description' => excerpt($section['description'] ?? $section['name']),
-        'canonical'   => $base . ($page > 1 ? '?page=' . $page : ''),
-        'prev_url'    => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
-        'next_url'    => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+        'section'          => $section,
+        'threads'          => $threads,
+        'pg'               => $pg,
+        'title'            => $section['name'] . ' — ' . $config['app_name'],
+        'description'      => excerpt($section['description'] ?? $section['name']),
+        'canonical'        => $base . ($page > 1 ? '?page=' . $page : ''),
+        'prev_url'         => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
+        'next_url'         => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+        'breadcrumb_schema' => json_encode([
+            '@context' => 'https://schema.org',
+            '@type'    => 'BreadcrumbList',
+            'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => 'Home', 'item' => $config['app_url'] . '/'],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => $section['name']],
+            ],
+        ]),
     ]);
 });
 
@@ -475,16 +484,26 @@ $router->add('GET', '/{section}/{thread}', function(array $p) use ($config) {
     ]);
 
     render('thread', [
-        'section'     => $section,
-        'thread'      => $thread,
-        'replies'     => $replies,
-        'pg'          => $pg,
-        'title'       => $thread['title'] . ' — ' . $section['name'] . ' — ' . $config['app_name'],
-        'description' => excerpt($thread['body']),
-        'canonical'   => $base . ($page > 1 ? '?page=' . $page : ''),
-        'prev_url'    => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
-        'next_url'    => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
-        'schema'      => $schema,
+        'section'          => $section,
+        'thread'           => $thread,
+        'replies'          => $replies,
+        'pg'               => $pg,
+        'title'            => $thread['title'] . ' — ' . $section['name'] . ' — ' . $config['app_name'],
+        'description'      => excerpt($thread['body']),
+        'canonical'        => $base . ($page > 1 ? '?page=' . $page : ''),
+        'prev_url'         => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
+        'next_url'         => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+        'og_type'          => 'article',
+        'schema'           => $schema,
+        'breadcrumb_schema' => json_encode([
+            '@context' => 'https://schema.org',
+            '@type'    => 'BreadcrumbList',
+            'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => 'Home',              'item' => $config['app_url'] . '/'],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => $section['name'],    'item' => $config['app_url'] . '/' . $section['slug']],
+                ['@type' => 'ListItem', 'position' => 3, 'name' => $thread['title']],
+            ],
+        ]),
     ]);
 });
 

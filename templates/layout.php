@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= h($title) ?></title>
+    <?php if (!empty($noindex)): ?>
+    <meta name="robots" content="noindex,follow">
+    <?php endif ?>
     <?php if (!empty($description)): ?>
     <meta name="description" content="<?= h($description) ?>">
     <?php endif ?>
@@ -16,9 +19,26 @@
     <?php if (!empty($next_url)): ?>
     <link rel="next" href="<?= h($next_url) ?>">
     <?php endif ?>
+    <meta property="og:site_name" content="<?= h($config['app_name']) ?>">
+    <meta property="og:title" content="<?= h($title) ?>">
+    <meta property="og:type" content="<?= !empty($og_type) ? h($og_type) : 'website' ?>">
+    <?php if (!empty($description)): ?>
+    <meta property="og:description" content="<?= h($description) ?>">
+    <?php endif ?>
+    <?php if (!empty($canonical)): ?>
+    <meta property="og:url" content="<?= h($canonical) ?>">
+    <?php endif ?>
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="<?= h($title) ?>">
+    <?php if (!empty($description)): ?>
+    <meta name="twitter:description" content="<?= h($description) ?>">
+    <?php endif ?>
     <link rel="stylesheet" href="/assets/style.css">
     <?php if (!empty($schema)): ?>
     <script type="application/ld+json"><?= $schema ?></script>
+    <?php endif ?>
+    <?php if (!empty($breadcrumb_schema)): ?>
+    <script type="application/ld+json"><?= $breadcrumb_schema ?></script>
     <?php endif ?>
 </head>
 <body>
