@@ -242,9 +242,9 @@ $router->add('GET', '/login', function() use ($config) {
 
 $router->add('POST', '/login', function() use ($config) {
     csrf_verify();
-    $email = trim($_POST['email'] ?? '');
+    $login = trim($_POST['login'] ?? '');
     $pass  = $_POST['password'] ?? '';
-    $user  = DB::one("SELECT * FROM users WHERE email = ?", [$email]);
+    $user  = DB::one("SELECT * FROM users WHERE email = ? OR username = ?", [$login, $login]);
 
     if (!$user || !password_verify($pass, $user['password_hash'])) {
         render('login', [

@@ -7,8 +7,8 @@
 <form method="post" action="/login" class="auth-form">
     <?= csrf_field() ?>
     <div class="form-group">
-        <label for="email">Email</label>
-        <input id="email" type="email" name="email" required autofocus autocomplete="email">
+        <label for="login">Username or email</label>
+        <input id="login" type="text" name="login" required autofocus autocomplete="username">
     </div>
     <div class="form-group">
         <label for="password">Password</label>
