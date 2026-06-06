@@ -1,6 +1,6 @@
 <nav class="breadcrumb">
     <a href="/">Home</a> &rsaquo;
-    <a href="/s/<?= h($section['slug']) ?>"><?= h($section['name']) ?></a> &rsaquo;
+    <a href="/<?= h($section['slug']) ?>"><?= h($section['name']) ?></a> &rsaquo;
     <?= h($thread['title']) ?>
 </nav>
 

@@ -73,94 +73,6 @@ $router->add('GET', '/', function() use ($config) {
     ]);
 });
 
-// ── Section ───────────────────────────────────────────────────────────────────
-$router->add('GET', '/s/{slug}', function(array $p) use ($config, $PER_PAGE) {
-    $section = DB::one("SELECT * FROM sections WHERE slug = ?", [$p['slug']]);
-    if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
-
-    $page  = max(1, (int)($_GET['page'] ?? 1));
-    $total = (int)DB::one("SELECT COUNT(*) AS c FROM threads WHERE section_id = ?", [$section['id']])['c'];
-    $pg    = paginate($total, $PER_PAGE, $page);
-
-    $threads = DB::all("
-        SELECT t.*, u.username
-        FROM threads t
-        JOIN users u ON u.id = t.user_id
-        WHERE t.section_id = ?
-        ORDER BY t.updated_at DESC
-        LIMIT ? OFFSET ?
-    ", [$section['id'], $PER_PAGE, $pg['offset']]);
-
-    $base = $config['app_url'] . '/s/' . $section['slug'];
-    render('section', [
-        'section'   => $section,
-        'threads'   => $threads,
-        'pg'        => $pg,
-        'title'     => $section['name'] . ' — ' . $config['app_name'],
-        'description' => excerpt($section['description'] ?? $section['name']),
-        'canonical' => $base . ($page > 1 ? '?page=' . $page : ''),
-        'prev_url'  => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
-        'next_url'  => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
-    ]);
-});
-
-// ── Thread ────────────────────────────────────────────────────────────────────
-$router->add('GET', '/s/{section}/{thread}', function(array $p) use ($config) {
-    $section = DB::one("SELECT * FROM sections WHERE slug = ?", [$p['section']]);
-    if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
-
-    $thread = DB::one("
-        SELECT t.*, u.username AS author, u.role AS author_role
-        FROM threads t JOIN users u ON u.id = t.user_id
-        WHERE t.section_id = ? AND t.slug = ?
-    ", [$section['id'], $p['thread']]);
-    if (!$thread) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
-
-    DB::execute("UPDATE threads SET view_count = view_count + 1 WHERE id = ?", [$thread['id']]);
-
-    $page  = max(1, (int)($_GET['page'] ?? 1));
-    $total = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread['id']])['c'];
-    $pg    = paginate($total, 30, $page);
-
-    $replies = DB::all("
-        SELECT r.*, u.username AS author, u.role AS author_role
-        FROM replies r JOIN users u ON u.id = r.user_id
-        WHERE r.thread_id = ?
-        ORDER BY r.created_at ASC
-        LIMIT ? OFFSET ?
-    ", [$thread['id'], 30, $pg['offset']]);
-
-    $base   = $config['app_url'] . '/s/' . $section['slug'] . '/' . $thread['slug'];
-    $schema = json_encode([
-        '@context'  => 'https://schema.org',
-        '@type'     => 'DiscussionForumPosting',
-        'headline'  => $thread['title'],
-        'text'      => excerpt($thread['body'], 500),
-        'author'    => ['@type' => 'Person', 'name' => $thread['author']],
-        'datePublished' => $thread['created_at'],
-        'dateModified'  => $thread['updated_at'],
-        'url'       => $base,
-        'interactionStatistic' => [
-            '@type'                => 'InteractionCounter',
-            'interactionType'      => 'https://schema.org/CommentAction',
-            'userInteractionCount' => $thread['reply_count'],
-        ],
-    ]);
-
-    render('thread', [
-        'section'     => $section,
-        'thread'      => $thread,
-        'replies'     => $replies,
-        'pg'          => $pg,
-        'title'       => $thread['title'] . ' — ' . $section['name'] . ' — ' . $config['app_name'],
-        'description' => excerpt($thread['body']),
-        'canonical'   => $base . ($page > 1 ? '?page=' . $page : ''),
-        'prev_url'    => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
-        'next_url'    => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
-        'schema'      => $schema,
-    ]);
-});
-
 // ── New Thread ────────────────────────────────────────────────────────────────
 $router->add('GET', '/new-thread', function() use ($config) {
     Auth::require();
@@ -212,7 +124,7 @@ $router->add('POST', '/new-thread', function() use ($config) {
         [$section_id, $user['id'], $title, $slug, $body, $image]
     );
 
-    redirect('/s/' . $section['slug'] . '/' . $slug);
+    redirect('/' . $section['slug'] . '/' . $slug);
 });
 
 // ── Reply ─────────────────────────────────────────────────────────────────────
@@ -249,7 +161,7 @@ $router->add('POST', '/reply', function() {
 
     $count     = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread_id])['c'];
     $last_page = max(1, (int)ceil($count / 30));
-    $url       = '/s/' . $thread['section_slug'] . '/' . $thread['slug']
+    $url       = '/' . $thread['section_slug'] . '/' . $thread['slug']
                  . ($last_page > 1 ? '?page=' . $last_page : '');
     redirect($url . '#bottom');
 });
@@ -370,9 +282,15 @@ $router->add('POST', '/admin/section', function() {
     $desc  = trim($_POST['description'] ?? '');
     $order = (int)($_POST['display_order'] ?? 0);
     if (!$name) { redirect('/admin'); return; }
+
+    $reserved = ['login','register','logout','new-thread','reply','admin','webhook',
+                 'api','sitemap','robots','assets','uploads','install','config'];
+    $candidate = unique_slug('sections', $name);
+    if (in_array($candidate, $reserved, true)) { redirect('/admin'); return; }
+
     DB::execute(
         "INSERT INTO sections (name, slug, description, display_order) VALUES (?, ?, ?, ?)",
-        [$name, unique_slug('sections', $name), $desc ?: null, $order]
+        [$name, $candidate, $desc ?: null, $order]
     );
     redirect('/admin');
 });
@@ -412,7 +330,7 @@ $router->add('POST', '/reply/delete', function() {
     DB::execute("DELETE FROM replies WHERE id = ?", [$id]);
     DB::execute("UPDATE threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = ?", [$reply['thread_id']]);
 
-    redirect('/s/' . $reply['section_slug'] . '/' . $reply['thread_slug']);
+    redirect('/' . $reply['section_slug'] . '/' . $reply['thread_slug']);
 });
 
 $router->add('POST', '/thread/delete', function() {
@@ -427,7 +345,7 @@ $router->add('POST', '/thread/delete', function() {
     if (!$thread) { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
 
     DB::execute("DELETE FROM threads WHERE id = ?", [$id]);
-    redirect('/s/' . $thread['section_slug']);
+    redirect('/' . $thread['section_slug']);
 });
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -458,10 +376,10 @@ $router->add('GET', '/sitemap.xml', function() use ($config) {
     echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
     echo '<url><loc>' . h($config['app_url']) . '/</loc></url>' . "\n";
     foreach ($sections as $s) {
-        echo '<url><loc>' . h($config['app_url'] . '/s/' . $s['slug']) . '</loc></url>' . "\n";
+        echo '<url><loc>' . h($config['app_url'] . '/' . $s['slug']) . '</loc></url>' . "\n";
     }
     foreach ($threads as $t) {
-        $loc = h($config['app_url'] . '/s/' . $t['section_slug'] . '/' . $t['slug']);
+        $loc = h($config['app_url'] . '/' . $t['section_slug'] . '/' . $t['slug']);
         $mod = date('Y-m-d', strtotime($t['updated_at']));
         echo "<url><loc>{$loc}</loc><lastmod>{$mod}</lastmod></url>\n";
     }
@@ -483,6 +401,94 @@ $router->add('GET', '/robots.txt', function() use ($config) {
     echo "Disallow: /webhook\n";
     echo "\nSitemap: " . $config['app_url'] . "/sitemap.xml\n";
     exit;
+});
+
+// ── Section ───────────────────────────────────────────────────────────────────
+$router->add('GET', '/{slug}', function(array $p) use ($config, $PER_PAGE) {
+    $section = DB::one("SELECT * FROM sections WHERE slug = ?", [$p['slug']]);
+    if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
+
+    $page  = max(1, (int)($_GET['page'] ?? 1));
+    $total = (int)DB::one("SELECT COUNT(*) AS c FROM threads WHERE section_id = ?", [$section['id']])['c'];
+    $pg    = paginate($total, $PER_PAGE, $page);
+
+    $threads = DB::all("
+        SELECT t.*, u.username
+        FROM threads t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.section_id = ?
+        ORDER BY t.updated_at DESC
+        LIMIT ? OFFSET ?
+    ", [$section['id'], $PER_PAGE, $pg['offset']]);
+
+    $base = $config['app_url'] . '/' . $section['slug'];
+    render('section', [
+        'section'     => $section,
+        'threads'     => $threads,
+        'pg'          => $pg,
+        'title'       => $section['name'] . ' — ' . $config['app_name'],
+        'description' => excerpt($section['description'] ?? $section['name']),
+        'canonical'   => $base . ($page > 1 ? '?page=' . $page : ''),
+        'prev_url'    => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
+        'next_url'    => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+    ]);
+});
+
+// ── Thread ────────────────────────────────────────────────────────────────────
+$router->add('GET', '/{section}/{thread}', function(array $p) use ($config) {
+    $section = DB::one("SELECT * FROM sections WHERE slug = ?", [$p['section']]);
+    if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
+
+    $thread = DB::one("
+        SELECT t.*, u.username AS author, u.role AS author_role
+        FROM threads t JOIN users u ON u.id = t.user_id
+        WHERE t.section_id = ? AND t.slug = ?
+    ", [$section['id'], $p['thread']]);
+    if (!$thread) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
+
+    DB::execute("UPDATE threads SET view_count = view_count + 1 WHERE id = ?", [$thread['id']]);
+
+    $page  = max(1, (int)($_GET['page'] ?? 1));
+    $total = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread['id']])['c'];
+    $pg    = paginate($total, 30, $page);
+
+    $replies = DB::all("
+        SELECT r.*, u.username AS author, u.role AS author_role
+        FROM replies r JOIN users u ON u.id = r.user_id
+        WHERE r.thread_id = ?
+        ORDER BY r.created_at ASC
+        LIMIT ? OFFSET ?
+    ", [$thread['id'], 30, $pg['offset']]);
+
+    $base   = $config['app_url'] . '/' . $section['slug'] . '/' . $thread['slug'];
+    $schema = json_encode([
+        '@context'  => 'https://schema.org',
+        '@type'     => 'DiscussionForumPosting',
+        'headline'  => $thread['title'],
+        'text'      => excerpt($thread['body'], 500),
+        'author'    => ['@type' => 'Person', 'name' => $thread['author']],
+        'datePublished' => $thread['created_at'],
+        'dateModified'  => $thread['updated_at'],
+        'url'       => $base,
+        'interactionStatistic' => [
+            '@type'                => 'InteractionCounter',
+            'interactionType'      => 'https://schema.org/CommentAction',
+            'userInteractionCount' => $thread['reply_count'],
+        ],
+    ]);
+
+    render('thread', [
+        'section'     => $section,
+        'thread'      => $thread,
+        'replies'     => $replies,
+        'pg'          => $pg,
+        'title'       => $thread['title'] . ' — ' . $section['name'] . ' — ' . $config['app_name'],
+        'description' => excerpt($thread['body']),
+        'canonical'   => $base . ($page > 1 ? '?page=' . $page : ''),
+        'prev_url'    => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
+        'next_url'    => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+        'schema'      => $schema,
+    ]);
 });
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────

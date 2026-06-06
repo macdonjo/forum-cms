@@ -92,7 +92,7 @@
         <tbody>
         <?php foreach ($sections as $s): ?>
         <tr>
-            <td><a href="/s/<?= h($s['slug']) ?>"><?= h($s['name']) ?></a></td>
+            <td><a href="/<?= h($s['slug']) ?>"><?= h($s['name']) ?></a></td>
             <td><code><?= h($s['slug']) ?></code></td>
             <td><?= (int)$s['display_order'] ?></td>
             <td>

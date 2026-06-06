@@ -33,7 +33,7 @@
     <?php foreach ($threads as $t): ?>
         <tr>
             <td class="thread-cell">
-                <a href="/s/<?= h($section['slug']) ?>/<?= h($t['slug']) ?>"><?= h($t['title']) ?></a>
+                <a href="/<?= h($section['slug']) ?>/<?= h($t['slug']) ?>"><?= h($t['title']) ?></a>
                 <span class="thread-author">by <?= h($t['username']) ?></span>
             </td>
             <td class="stat-cell"><?= (int)$t['reply_count'] ?></td>

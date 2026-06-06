@@ -29,7 +29,7 @@
             <?php if (Auth::check()): $u = Auth::user(); ?>
                 <a href="/new-thread">+ New Thread</a>
                 <span class="username"><?= h($u['username']) ?></span>
-                <?php if ($u['is_admin']): ?><a href="/admin">Admin</a><?php endif ?>
+                <?php if ($u['is_admin']): ?><a href="/admin">Admin CP</a><?php endif ?>
                 <a href="/logout">Logout</a>
             <?php else: ?>
                 <a href="/login">Login</a>

@@ -20,7 +20,7 @@
     <?php foreach ($sections as $s): ?>
         <tr>
             <td class="section-cell">
-                <a href="/s/<?= h($s['slug']) ?>" class="section-link"><?= h($s['name']) ?></a>
+                <a href="/<?= h($s['slug']) ?>" class="section-link"><?= h($s['name']) ?></a>
                 <?php if ($s['description']): ?>
                 <p class="section-desc"><?= h($s['description']) ?></p>
                 <?php endif ?>
