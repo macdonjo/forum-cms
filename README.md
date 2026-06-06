@@ -10,7 +10,7 @@ A minimal, SEO-focused forum. Plain PHP + MySQL, no dependencies.
 
 ## Install
 
-1. [Download the latest zip](https://github.com/macdonjo/forum-cms/archive/refs/heads/main.zip) and extract it
+1. [Download the latest zip](https://github.com/macdonjo/forum-cms/archive/refs/heads/main.zip) and extract it — GitHub wraps everything in a `forum-cms-main/` folder, so upload the **contents** of that folder, not the folder itself
 2. Upload all files to your web root (`public_html`, `htdocs`, etc.)
 3. Visit `yoursite.com/install.php`
 4. Fill in your database credentials, site URL, and admin account — done
