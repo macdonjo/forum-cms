@@ -6,6 +6,9 @@ body {
     line-height: 1.6;
     color: #222;
     background: #eaecef;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 .container { max-width: 960px; margin: 0 auto; padding: 0 16px; }
@@ -27,7 +30,7 @@ body {
 .username { color: #7ab3e0; font-size: 0.875rem; }
 
 /* ── Main ── */
-main.container { padding: 24px 16px; min-height: calc(100vh - 120px); }
+main.container { padding: 24px 16px; flex: 1; }
 
 /* ── Footer ── */
 #site-footer { background: #1a1a1a; color: #888; padding: 16px 0; margin-top: 48px; font-size: 0.8rem; }
