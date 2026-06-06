@@ -316,13 +316,15 @@ $router->add('POST', '/reply/delete', function() {
     csrf_verify();
     $id    = (int)($_POST['id'] ?? 0);
     $reply = $id ? DB::one("
-        SELECT r.*, t.slug AS thread_slug, t.id AS thread_id, s.slug AS section_slug
+        SELECT r.*, t.slug AS thread_slug, t.id AS thread_id, s.slug AS section_slug, u.role AS author_role
         FROM replies r
         JOIN threads t ON t.id = r.thread_id
         JOIN sections s ON s.id = t.section_id
+        JOIN users u ON u.id = r.user_id
         WHERE r.id = ?
     ", [$id]) : null;
     if (!$reply) { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
+    if (!Auth::isAdmin() && $reply['author_role'] === 'admin') { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
 
     DB::execute("DELETE FROM replies WHERE id = ?", [$id]);
     DB::execute("UPDATE threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = ?", [$reply['thread_id']]);
@@ -335,11 +337,14 @@ $router->add('POST', '/thread/delete', function() {
     csrf_verify();
     $id     = (int)($_POST['id'] ?? 0);
     $thread = $id ? DB::one("
-        SELECT t.*, s.slug AS section_slug
-        FROM threads t JOIN sections s ON s.id = t.section_id
+        SELECT t.*, s.slug AS section_slug, u.role AS author_role
+        FROM threads t
+        JOIN sections s ON s.id = t.section_id
+        JOIN users u ON u.id = t.user_id
         WHERE t.id = ?
     ", [$id]) : null;
     if (!$thread) { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
+    if (!Auth::isAdmin() && $thread['author_role'] === 'admin') { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
 
     DB::execute("DELETE FROM threads WHERE id = ?", [$id]);
     redirect('/' . $thread['section_slug']);
