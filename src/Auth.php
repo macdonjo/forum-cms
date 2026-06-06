@@ -11,7 +11,7 @@ class Auth {
         session_regenerate_id(true);
         $_SESSION['uid']      = (int)$user['id'];
         $_SESSION['username'] = $user['username'];
-        $_SESSION['is_admin'] = (bool)$user['is_admin'];
+        $_SESSION['role']     = $user['role'] ?? 'user';
     }
 
     public static function logout(): void {
@@ -28,8 +28,18 @@ class Auth {
         return [
             'id'       => $_SESSION['uid'],
             'username' => $_SESSION['username'],
-            'is_admin' => $_SESSION['is_admin'],
+            'role'     => $_SESSION['role'],
+            'is_admin' => $_SESSION['role'] === 'admin',
+            'is_mod'   => in_array($_SESSION['role'], ['admin', 'moderator']),
         ];
+    }
+
+    public static function isAdmin(): bool {
+        return ($_SESSION['role'] ?? '') === 'admin';
+    }
+
+    public static function isMod(): bool {
+        return in_array($_SESSION['role'] ?? '', ['admin', 'moderator']);
     }
 
     public static function require(): void {
@@ -41,7 +51,15 @@ class Auth {
 
     public static function requireAdmin(): void {
         self::require();
-        if (!$_SESSION['is_admin']) {
+        if (!self::isAdmin()) {
+            http_response_code(403);
+            exit('Forbidden');
+        }
+    }
+
+    public static function requireMod(): void {
+        self::require();
+        if (!self::isMod()) {
             http_response_code(403);
             exit('Forbidden');
         }

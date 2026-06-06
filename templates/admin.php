@@ -21,6 +21,37 @@
     <?php endif ?>
 </section>
 
+<section class="admin-section" style="margin-bottom:20px">
+    <h2>Users</h2>
+    <table class="board-table">
+        <thead>
+            <tr><th>Username</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($users as $u): ?>
+        <tr>
+            <td><strong><?= h($u['username']) ?></strong><?= role_badge($u['role']) ?></td>
+            <td style="font-size:.85rem;color:#666"><?= h($u['email']) ?></td>
+            <td><?= h($u['role']) ?></td>
+            <td style="font-size:.85rem;color:#666"><?= date('M j, Y', strtotime($u['created_at'])) ?></td>
+            <td>
+                <?php if ($u['role'] !== 'admin'): ?>
+                <form method="post" action="/admin/user/role">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+                    <select name="role" onchange="this.form.submit()" style="font:inherit;padding:4px;border:1px solid #ccc;border-radius:4px">
+                        <option value="user"      <?= $u['role'] === 'user'      ? 'selected' : '' ?>>User</option>
+                        <option value="moderator" <?= $u['role'] === 'moderator' ? 'selected' : '' ?>>Moderator</option>
+                    </select>
+                </form>
+                <?php endif ?>
+            </td>
+        </tr>
+        <?php endforeach ?>
+        </tbody>
+    </table>
+</section>
+
 <section class="admin-section">
     <h2>Sections</h2>
 

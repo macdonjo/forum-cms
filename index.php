@@ -21,6 +21,14 @@ require ROOT . '/src/Updater.php';
 
 Auth::start();
 
+// Auto-migrate: add role column to existing installs
+$_migration_cols = array_column(DB::all("SHOW COLUMNS FROM users LIKE 'role'"), 'Field');
+if (empty($_migration_cols)) {
+    DB::execute("ALTER TABLE users ADD COLUMN role ENUM('user','moderator','admin') NOT NULL DEFAULT 'user'");
+    DB::execute("UPDATE users SET role = 'admin' WHERE is_admin = 1");
+}
+unset($_migration_cols);
+
 // Once per day, check for updates after the response is sent so users feel nothing
 if (Updater::shouldCheck()) {
     register_shutdown_function(function () {
@@ -90,7 +98,7 @@ $router->add('GET', '/s/{section}/{thread}', function(array $p) use ($config) {
     if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
 
     $thread = DB::one("
-        SELECT t.*, u.username AS author
+        SELECT t.*, u.username AS author, u.role AS author_role
         FROM threads t JOIN users u ON u.id = t.user_id
         WHERE t.section_id = ? AND t.slug = ?
     ", [$section['id'], $p['thread']]);
@@ -103,7 +111,7 @@ $router->add('GET', '/s/{section}/{thread}', function(array $p) use ($config) {
     $pg    = paginate($total, 30, $page);
 
     $replies = DB::all("
-        SELECT r.*, u.username AS author
+        SELECT r.*, u.username AS author, u.role AS author_role
         FROM replies r JOIN users u ON u.id = r.user_id
         WHERE r.thread_id = ?
         ORDER BY r.created_at ASC
@@ -288,10 +296,10 @@ $router->add('POST', '/register', function() use ($config) {
         return;
     }
 
-    $is_admin = (int)(DB::one("SELECT COUNT(*) AS c FROM users")['c'] === 0);
+    $role = DB::one("SELECT COUNT(*) AS c FROM users")['c'] == 0 ? 'admin' : 'user';
     DB::execute(
-        "INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)",
-        [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $is_admin]
+        "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+        [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $role]
     );
 
     Auth::login(DB::one("SELECT * FROM users WHERE email = ?", [$email]));
@@ -308,8 +316,10 @@ $router->add('GET', '/logout', function() {
 $router->add('GET', '/admin', function() use ($config) {
     Auth::requireAdmin();
     $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
+    $users    = DB::all("SELECT id, username, email, role, created_at FROM users ORDER BY created_at ASC");
     render('admin', [
         'sections'    => $sections,
+        'users'       => $users,
         'title'       => 'Admin — ' . $config['app_name'],
         'description' => '',
     ]);
@@ -352,6 +362,51 @@ $router->add('POST', '/admin/section/delete', function() {
     $id = (int)($_POST['id'] ?? 0);
     if ($id) DB::execute("DELETE FROM sections WHERE id = ?", [$id]);
     redirect('/admin');
+});
+
+$router->add('POST', '/admin/user/role', function() {
+    Auth::requireAdmin();
+    csrf_verify();
+    $id   = (int)($_POST['id'] ?? 0);
+    $role = $_POST['role'] ?? 'user';
+    if (!in_array($role, ['user', 'moderator'])) $role = 'user'; // admin can't be set here
+    if ($id) DB::execute("UPDATE users SET role = ? WHERE id = ? AND role != 'admin'", [$role, $id]);
+    redirect('/admin');
+});
+
+// ── Mod actions ───────────────────────────────────────────────────────────────
+$router->add('POST', '/reply/delete', function() {
+    Auth::requireMod();
+    csrf_verify();
+    $id    = (int)($_POST['id'] ?? 0);
+    $reply = $id ? DB::one("
+        SELECT r.*, t.slug AS thread_slug, t.id AS thread_id, s.slug AS section_slug
+        FROM replies r
+        JOIN threads t ON t.id = r.thread_id
+        JOIN sections s ON s.id = t.section_id
+        WHERE r.id = ?
+    ", [$id]) : null;
+    if (!$reply) { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
+
+    DB::execute("DELETE FROM replies WHERE id = ?", [$id]);
+    DB::execute("UPDATE threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = ?", [$reply['thread_id']]);
+
+    redirect('/s/' . $reply['section_slug'] . '/' . $reply['thread_slug']);
+});
+
+$router->add('POST', '/thread/delete', function() {
+    Auth::requireMod();
+    csrf_verify();
+    $id     = (int)($_POST['id'] ?? 0);
+    $thread = $id ? DB::one("
+        SELECT t.*, s.slug AS section_slug
+        FROM threads t JOIN sections s ON s.id = t.section_id
+        WHERE t.id = ?
+    ", [$id]) : null;
+    if (!$thread) { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
+
+    DB::execute("DELETE FROM threads WHERE id = ?", [$id]);
+    redirect('/s/' . $thread['section_slug']);
 });
 
 // ── Sitemap ───────────────────────────────────────────────────────────────────

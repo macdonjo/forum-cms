@@ -100,6 +100,14 @@ function upload_image(array $file): ?string {
     return date('Y/m') . '/' . $name;
 }
 
+function role_badge(string $role): string {
+    return match($role) {
+        'admin'     => ' <span class="badge badge-admin">Admin</span>',
+        'moderator' => ' <span class="badge badge-mod">Moderator</span>',
+        default     => '',
+    };
+}
+
 function render(string $tpl, array $vars = []): void {
     global $config;
     $vars += ['config' => $config, 'flash' => get_flash()];

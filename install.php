@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 username      VARCHAR(50)   NOT NULL UNIQUE,
                 email         VARCHAR(255)  NOT NULL UNIQUE,
                 password_hash VARCHAR(255)  NOT NULL,
-                is_admin      TINYINT(1)    NOT NULL DEFAULT 0,
+                role          ENUM('user','moderator','admin') NOT NULL DEFAULT 'user',
                 created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // ── Create admin account ──────────────────────────────────────────
             $stmt = $pdo->prepare(
-                "INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, 1)"
+                "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, 'admin')"
             );
             $stmt->execute([$username, $email, password_hash($pass, PASSWORD_DEFAULT)]);
 

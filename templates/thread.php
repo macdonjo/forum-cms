@@ -8,7 +8,7 @@
     <header class="post-header">
         <h1><?= h($thread['title']) ?></h1>
         <div class="post-meta">
-            by <strong><?= h($thread['author']) ?></strong>
+            by <strong><?= h($thread['author']) ?></strong><?= role_badge($thread['author_role']) ?>
             &middot; <?= date('M j, Y \a\t g:i a', strtotime($thread['created_at'])) ?>
             &middot; <?= (int)$thread['view_count'] ?> views
         </div>
@@ -17,6 +17,15 @@
     <?php if ($thread['image']): ?>
     <div class="post-image">
         <img src="/uploads/<?= h($thread['image']) ?>" alt="" loading="lazy">
+    </div>
+    <?php endif ?>
+    <?php if (Auth::isMod()): ?>
+    <div class="mod-actions">
+        <form method="post" action="/thread/delete" onsubmit="return confirm('Delete this thread and all replies?')">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= (int)$thread['id'] ?>">
+            <button type="submit" class="btn btn-danger btn-sm">Delete Thread</button>
+        </form>
     </div>
     <?php endif ?>
 </article>
@@ -39,8 +48,15 @@
     <?php foreach ($replies as $r): ?>
     <article class="post reply">
         <div class="post-meta">
-            <strong><?= h($r['author']) ?></strong>
+            <strong><?= h($r['author']) ?></strong><?= role_badge($r['author_role']) ?>
             &middot; <?= date('M j, Y \a\t g:i a', strtotime($r['created_at'])) ?>
+            <?php if (Auth::isMod()): ?>
+            <form method="post" action="/reply/delete" class="inline-delete" onsubmit="return confirm('Delete this reply?')">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+            <?php endif ?>
         </div>
         <div class="post-body"><?= nl2br(h($r['body'])) ?></div>
         <?php if ($r['image']): ?>
