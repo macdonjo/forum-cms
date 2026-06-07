@@ -357,6 +357,65 @@ $router->add('POST', '/thread/delete', function() {
 });
 
 // ── API ───────────────────────────────────────────────────────────────────────
+$router->add('POST', '/api/users', function() {
+    API::auth();
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+
+    $username = trim($b['username'] ?? '');
+    $email    = trim($b['email']    ?? '');
+    $pass     = $b['password']      ?? '';
+    $role     = $b['role']          ?? 'user';
+
+    if (!in_array($role, ['user','moderator','admin'], true)) $role = 'user';
+    if (mb_strlen($username) < 3)                        API::respond(['error' => 'Username must be at least 3 characters.'], 422);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL))      API::respond(['error' => 'Invalid email address.'], 422);
+    if (mb_strlen($pass) < 8)                            API::respond(['error' => 'Password must be at least 8 characters.'], 422);
+    if (DB::one("SELECT id FROM users WHERE username = ?", [$username])) API::respond(['error' => 'Username already taken.'], 422);
+    if (DB::one("SELECT id FROM users WHERE email = ?",    [$email]))    API::respond(['error' => 'Email already registered.'], 422);
+
+    DB::execute(
+        "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+        [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $role]
+    );
+    $user = DB::one("SELECT id, username, email, role, created_at FROM users WHERE id = ?", [DB::lastId()]);
+    API::respond(['user' => $user], 201);
+});
+
+$router->add('POST', '/api/threads', function() use ($config) {
+    API::auth();
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+
+    $title   = trim($b['title']   ?? '');
+    $body    = trim($b['body']    ?? '');
+    $user_id = (int)($b['user_id'] ?? 0);
+
+    if (!$title) API::respond(['error' => 'title is required.'], 422);
+    if (!$body)  API::respond(['error' => 'body is required.'], 422);
+
+    $section = isset($b['section'])
+        ? DB::one("SELECT * FROM sections WHERE slug = ?", [$b['section']])
+        : (isset($b['section_id']) ? DB::one("SELECT * FROM sections WHERE id = ?", [(int)$b['section_id']]) : null);
+    if (!$section) API::respond(['error' => 'Section not found. Pass section (slug) or section_id.'], 422);
+
+    if ($user_id) {
+        $user = DB::one("SELECT id FROM users WHERE id = ?", [$user_id]);
+        if (!$user) API::respond(['error' => 'User not found.'], 404);
+    } else {
+        $user = DB::one("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1");
+    }
+
+    $slug = unique_slug('threads', $title, 'section_id', $section['id']);
+    DB::execute(
+        "INSERT INTO threads (section_id, user_id, title, slug, body) VALUES (?, ?, ?, ?, ?)",
+        [$section['id'], $user['id'], $title, $slug, $body]
+    );
+    $thread = DB::one("SELECT id, title, slug, created_at FROM threads WHERE id = ?", [DB::lastId()]);
+    API::respond(['thread' => $thread + [
+        'url'     => $config['app_url'] . '/' . $section['slug'] . '/' . $thread['slug'],
+        'section' => $section['slug'],
+    ]], 201);
+});
+
 $router->add('POST', '/api/update', function() {
     API::auth();
     $before = Updater::currentVersion();

@@ -20,6 +20,16 @@
         <tbody>
             <tr>
                 <td><code>POST</code></td>
+                <td><code><?= h($config['app_url']) ?>/api/users</code></td>
+                <td style="font-size:.85rem">Create a user. Body: <code>username</code>, <code>email</code>, <code>password</code>, <code>role</code> (optional)</td>
+            </tr>
+            <tr>
+                <td><code>POST</code></td>
+                <td><code><?= h($config['app_url']) ?>/api/threads</code></td>
+                <td style="font-size:.85rem">Create a thread. Body: <code>title</code>, <code>body</code>, <code>section</code> (slug) or <code>section_id</code>, <code>user_id</code> (optional)</td>
+            </tr>
+            <tr>
+                <td><code>POST</code></td>
                 <td><code><?= h($config['app_url']) ?>/api/update</code></td>
                 <td style="font-size:.85rem">Force-pull latest update from GitHub immediately</td>
             </tr>
