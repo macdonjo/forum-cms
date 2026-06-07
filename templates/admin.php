@@ -1,6 +1,31 @@
 <h1>Admin</h1>
 
 <section class="admin-section" style="margin-bottom:20px">
+    <h2>Settings</h2>
+    <form method="post" action="/cp/settings">
+        <?= csrf_field() ?>
+        <div class="form-group">
+            <label>Forum name</label>
+            <input type="text" name="forum_name" value="<?= h($config['app_name']) ?>" required maxlength="100">
+        </div>
+        <div class="form-group">
+            <label>Forum description <small>(homepage meta description)</small></label>
+            <input type="text" name="forum_description" value="<?= h($config['forum_description']) ?>" maxlength="255">
+        </div>
+        <div class="form-group">
+            <label>Threads per page <input type="number" name="posts_per_page" value="<?= (int)$config['posts_per_page'] ?>" min="5" max="100" style="width:80px"></label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="allow_registration" <?= $config['allow_registration'] ? 'checked' : '' ?>>
+                Allow new registrations
+            </label>
+        </div>
+        <button type="submit" class="btn">Save Settings</button>
+    </form>
+</section>
+
+<section class="admin-section" style="margin-bottom:20px">
     <h2>API</h2>
     <p style="margin-bottom:12px;font-size:.9rem;color:#555">Use this key to authenticate API requests via <code>Authorization: Bearer {key}</code> or <code>?key={key}</code>.</p>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">

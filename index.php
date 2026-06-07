@@ -47,8 +47,27 @@ if (Updater::shouldCheck()) {
     });
 }
 
+// ── Load + seed editable settings ────────────────────────────────────────────
+$_s = array_column(DB::all("SELECT `key`, `value` FROM settings"), 'value', 'key');
+foreach ([
+    'forum_name'         => $config['app_name'],
+    'forum_description'  => 'A forum. Join the conversation.',
+    'allow_registration' => '1',
+    'posts_per_page'     => '20',
+] as $_k => $_v) {
+    if (!array_key_exists($_k, $_s)) {
+        DB::execute("INSERT IGNORE INTO settings (`key`, `value`) VALUES (?, ?)", [$_k, $_v]);
+        $_s[$_k] = $_v;
+    }
+}
+if (!empty($_s['forum_name']))    $config['app_name'] = $_s['forum_name'];
+$config['forum_description']  = $_s['forum_description']  ?? 'A forum. Join the conversation.';
+$config['allow_registration'] = ($_s['allow_registration'] ?? '1') === '1';
+$config['posts_per_page']     = max(5, min(100, (int)($_s['posts_per_page'] ?? 20)));
+unset($_s, $_k, $_v);
+
 $router   = new Router();
-$PER_PAGE = 20;
+$PER_PAGE = $config['posts_per_page'];
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 $router->add('GET', '/', function() use ($config) {
@@ -64,7 +83,7 @@ $router->add('GET', '/', function() use ($config) {
     render('home', [
         'sections'    => $sections,
         'title'       => $config['app_name'],
-        'description' => 'A forum. Join the conversation.',
+        'description' => $config['forum_description'],
         'canonical'   => $config['app_url'] . '/',
         'schema'      => json_encode([
             '@context' => 'https://schema.org',
@@ -197,10 +216,12 @@ $router->add('POST', '/login', function() use ($config) {
 // ── Register ──────────────────────────────────────────────────────────────────
 $router->add('GET', '/register', function() use ($config) {
     if (Auth::check()) redirect('/');
+    if (!$config['allow_registration']) { http_response_code(403); render('404', ['title' => 'Registration Closed', 'description' => '']); return; }
     render('register', ['title' => 'Register — ' . $config['app_name'], 'description' => '', 'noindex' => true]);
 });
 
 $router->add('POST', '/register', function() use ($config) {
+    if (!$config['allow_registration']) { http_response_code(403); exit('Registration closed.'); }
     csrf_verify();
     $username = trim($_POST['username'] ?? '');
     $email    = trim($_POST['email'] ?? '');
@@ -252,6 +273,21 @@ $router->add('GET', '/cp', function() use ($config) {
         'title'       => 'Admin — ' . $config['app_name'],
         'description' => '',
     ]);
+});
+
+$router->add('POST', '/cp/settings', function() use ($config) {
+    Auth::requireAdmin();
+    csrf_verify();
+    $updates = [
+        'forum_name'         => trim($_POST['forum_name'] ?? '') ?: $config['app_name'],
+        'forum_description'  => trim($_POST['forum_description'] ?? ''),
+        'allow_registration' => isset($_POST['allow_registration']) ? '1' : '0',
+        'posts_per_page'     => (string)max(5, min(100, (int)($_POST['posts_per_page'] ?? 20))),
+    ];
+    foreach ($updates as $k => $v) {
+        DB::execute("UPDATE settings SET `value` = ? WHERE `key` = ?", [$v, $k]);
+    }
+    redirect('/cp');
 });
 
 $router->add('POST', '/cp/api/regenerate', function() {
