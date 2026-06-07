@@ -61,11 +61,24 @@ $router->add('GET', '/', function() use ($config) {
         GROUP BY s.id
         ORDER BY s.display_order, s.name
     ");
+    $parts = [];
+    foreach ($sections as $s) {
+        $part = ['@type' => 'DiscussionForum', 'name' => $s['name'], 'url' => $config['app_url'] . '/' . $s['slug']];
+        if ($s['description']) $part['description'] = $s['description'];
+        $parts[] = $part;
+    }
     render('home', [
         'sections'    => $sections,
         'title'       => $config['app_name'],
         'description' => 'A forum. Join the conversation.',
         'canonical'   => $config['app_url'] . '/',
+        'schema'      => json_encode([
+            '@context' => 'https://schema.org',
+            '@type'    => 'DiscussionForum',
+            'name'     => $config['app_name'],
+            'url'      => $config['app_url'] . '/',
+            'hasPart'  => $parts,
+        ]),
     ]);
 });
 
@@ -439,7 +452,16 @@ $router->add('GET', '/{slug}', function(array $p) use ($config, $PER_PAGE) {
         LIMIT ? OFFSET ?
     ", [$section['id'], $PER_PAGE, $pg['offset']]);
 
-    $base = $config['app_url'] . '/' . $section['slug'];
+    $base  = $config['app_url'] . '/' . $section['slug'];
+    $items = [];
+    foreach ($threads as $i => $t) {
+        $items[] = [
+            '@type'    => 'ListItem',
+            'position' => $pg['offset'] + $i + 1,
+            'url'      => $base . '/' . $t['slug'],
+            'name'     => $t['title'],
+        ];
+    }
     render('section', [
         'section'          => $section,
         'threads'          => $threads,
@@ -449,6 +471,22 @@ $router->add('GET', '/{slug}', function(array $p) use ($config, $PER_PAGE) {
         'canonical'        => $base . ($page > 1 ? '?page=' . $page : ''),
         'prev_url'         => $pg['has_prev'] ? $base . '?page=' . ($page - 1) : null,
         'next_url'         => $pg['has_next'] ? $base . '?page=' . ($page + 1) : null,
+        'schema'           => json_encode([
+            '@context' => 'https://schema.org',
+            '@graph'   => [
+                array_filter([
+                    '@type'       => 'DiscussionForum',
+                    'name'        => $section['name'],
+                    'url'         => $base,
+                    'description' => $section['description'] ?: null,
+                ]),
+                [
+                    '@type'           => 'ItemList',
+                    'name'            => $section['name'],
+                    'itemListElement' => $items,
+                ],
+            ],
+        ]),
         'breadcrumb_schema' => json_encode([
             '@context' => 'https://schema.org',
             '@type'    => 'BreadcrumbList',
