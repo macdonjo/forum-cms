@@ -55,6 +55,7 @@ class Auth {
             http_response_code(403);
             exit('Forbidden');
         }
+        header('Cache-Control: no-store');
     }
 
     public static function requireMod(): void {
