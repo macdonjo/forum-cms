@@ -5,6 +5,9 @@ class Auth {
             session_name('forum_sess');
             session_start();
         }
+        if (self::check()) {
+            header('Cache-Control: no-store');
+        }
     }
 
     public static function login(array $user): void {
