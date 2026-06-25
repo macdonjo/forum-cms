@@ -480,12 +480,13 @@ $router->add('POST', '/api/replies', function() use ($config) {
         "INSERT INTO replies (thread_id, user_id, body, image) VALUES (?, ?, ?, ?)",
         [$thread_id, $user['id'], $body, null]
     );
+    $reply_id = DB::lastId();   // capture before the UPDATE; MySQL resets lastInsertId() after a non-INSERT
     DB::execute(
         "UPDATE threads SET reply_count = reply_count + 1, updated_at = NOW() WHERE id = ?",
         [$thread_id]
     );
 
-    $reply = DB::one("SELECT id, thread_id, user_id, created_at FROM replies WHERE id = ?", [DB::lastId()]);
+    $reply = DB::one("SELECT id, thread_id, user_id, created_at FROM replies WHERE id = ?", [$reply_id]);
     API::respond(['reply' => $reply + [
         'url' => $config['app_url'] . '/' . $thread['section_slug'] . '/' . $thread['slug'],
     ]], 201);
