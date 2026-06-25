@@ -452,6 +452,45 @@ $router->add('POST', '/api/threads', function() use ($config) {
     ]], 201);
 });
 
+$router->add('POST', '/api/replies', function() use ($config) {
+    API::auth();
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+
+    $thread_id = (int)($b['thread_id'] ?? 0);
+    $body      = trim($b['body'] ?? '');
+    $user_id   = (int)($b['user_id'] ?? 0);
+
+    if (!$body) API::respond(['error' => 'body is required.'], 422);
+
+    $thread = $thread_id ? DB::one("
+        SELECT t.*, s.slug AS section_slug
+        FROM threads t JOIN sections s ON s.id = t.section_id
+        WHERE t.id = ?
+    ", [$thread_id]) : null;
+    if (!$thread) API::respond(['error' => 'Thread not found. Pass thread_id.'], 422);
+
+    if ($user_id) {
+        $user = DB::one("SELECT id FROM users WHERE id = ?", [$user_id]);
+        if (!$user) API::respond(['error' => 'User not found.'], 404);
+    } else {
+        $user = DB::one("SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1");
+    }
+
+    DB::execute(
+        "INSERT INTO replies (thread_id, user_id, body, image) VALUES (?, ?, ?, ?)",
+        [$thread_id, $user['id'], $body, null]
+    );
+    DB::execute(
+        "UPDATE threads SET reply_count = reply_count + 1, updated_at = NOW() WHERE id = ?",
+        [$thread_id]
+    );
+
+    $reply = DB::one("SELECT id, thread_id, user_id, created_at FROM replies WHERE id = ?", [DB::lastId()]);
+    API::respond(['reply' => $reply + [
+        'url' => $config['app_url'] . '/' . $thread['section_slug'] . '/' . $thread['slug'],
+    ]], 201);
+});
+
 $router->add('POST', '/api/update', function() {
     API::auth();
     $before = Updater::currentVersion();
