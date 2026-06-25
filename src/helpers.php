@@ -43,6 +43,11 @@ function csrf_token(): string {
 }
 
 function csrf_field(): string {
+    // A page that renders a session-bound CSRF form must never be shared-cached:
+    // Cloudflare would serve one user's token to everyone and strip Set-Cookie,
+    // breaking login/register/CSRF for fresh visitors. Anonymous content pages
+    // (home/section/thread) don't call this, so they stay cacheable for SEO.
+    if (!headers_sent()) header('Cache-Control: no-store');
     return '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '">';
 }
 
