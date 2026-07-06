@@ -628,7 +628,9 @@ $router->add('GET', '/{section}/{thread}', function(array $p) use ($config) {
     ", [$section['id'], $p['thread']]);
     if (!$thread) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
 
-    DB::execute("UPDATE threads SET view_count = view_count + 1 WHERE id = ?", [$thread['id']]);
+    // Set updated_at to its own value so the ON UPDATE CURRENT_TIMESTAMP does not
+    // fire — a page view must not count as thread activity in the "Updated" column.
+    DB::execute("UPDATE threads SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?", [$thread['id']]);
 
     $page  = max(1, (int)($_GET['page'] ?? 1));
     $total = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread['id']])['c'];
