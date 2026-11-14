@@ -24,14 +24,24 @@ class API {
     /**
      * Parse an optional client-supplied timestamp (ISO 8601 or anything strtotime
      * accepts) into a MySQL DATETIME in the server's timezone. Returns null when
-     * absent; responds 422 when unparseable or in the future.
+     * absent; responds 422 when unparseable or more than a year ahead. A future
+     * value schedules the content: it stays hidden from the site until then.
      */
     public static function timestamp(mixed $value, string $field = 'created_at'): ?string {
         if ($value === null || $value === '') return null;
         $ts = is_numeric($value) ? (int)$value : strtotime((string)$value);
-        if ($ts === false)       self::respond(['error' => "$field is not a valid date/time."], 422);
-        if ($ts > time() + 60)   self::respond(['error' => "$field cannot be in the future."], 422);
+        if ($ts === false)                 self::respond(['error' => "$field is not a valid date/time."], 422);
+        if ($ts > time() + 366 * 86400)    self::respond(['error' => "$field cannot be more than a year in the future."], 422);
         return date('Y-m-d H:i:s', $ts);
+    }
+
+    /** PHP and MySQL clocks — created_at is parsed by PHP but compared against MySQL NOW(). */
+    public static function serverTime(): array {
+        return [
+            'php'      => date('Y-m-d H:i:s'),
+            'php_tz'   => date_default_timezone_get(),
+            'db'       => DB::one("SELECT NOW() AS n")['n'],
+        ];
     }
 
     /** Clamp ?limit= / ?offset= query params. */

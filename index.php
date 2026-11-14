@@ -66,6 +66,13 @@ $config['allow_registration'] = ($_s['allow_registration'] ?? '1') === '1';
 $config['posts_per_page']     = max(5, min(100, (int)($_s['posts_per_page'] ?? 20)));
 unset($_s, $_k, $_v);
 
+// ── Scheduled content ────────────────────────────────────────────────────────
+// Threads/replies may carry a future created_at (via the API). Public queries
+// filter on created_at <= NOW(), so they appear on time regardless. The stored
+// threads.reply_count / threads.updated_at only reflect *visible* replies, so once
+// a minute we catch up the threads whose scheduled replies have since gone live.
+publish_due();
+
 $router   = new Router();
 $PER_PAGE = $config['posts_per_page'];
 
@@ -76,7 +83,7 @@ $router->add('GET', '/', function() use ($config) {
                COUNT(DISTINCT t.id) AS thread_count,
                MAX(t.updated_at)    AS last_activity
         FROM sections s
-        LEFT JOIN threads t ON t.section_id = s.id
+        LEFT JOIN threads t ON t.section_id = s.id AND t.created_at <= NOW()
         GROUP BY s.id
         ORDER BY s.display_order, s.name
     ");
@@ -160,7 +167,7 @@ $router->add('POST', '/reply', function() {
     $thread = $thread_id ? DB::one("
         SELECT t.*, s.slug AS section_slug
         FROM threads t JOIN sections s ON s.id = t.section_id
-        WHERE t.id = ?
+        WHERE t.id = ? AND t.created_at <= NOW()
     ", [$thread_id]) : null;
 
     if (!$thread || !$body) {
@@ -181,7 +188,7 @@ $router->add('POST', '/reply', function() {
         [$thread_id]
     );
 
-    $count     = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread_id])['c'];
+    $count     = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ? AND created_at <= NOW()", [$thread_id])['c'];
     $last_page = max(1, (int)ceil($count / 30));
     $url       = '/' . $thread['section_slug'] . '/' . $thread['slug']
                  . ($last_page > 1 ? '?page=' . $last_page : '');
@@ -369,7 +376,11 @@ $router->add('POST', '/reply/delete', function() {
     if (!Auth::isAdmin() && $reply['author_role'] === 'admin') { redirect($_SERVER['HTTP_REFERER'] ?? '/'); return; }
 
     DB::execute("DELETE FROM replies WHERE id = ?", [$id]);
-    DB::execute("UPDATE threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = ?", [$reply['thread_id']]);
+    DB::execute("
+        UPDATE threads SET updated_at = updated_at,
+               reply_count = (SELECT COUNT(*) FROM replies r WHERE r.thread_id = threads.id AND r.created_at <= NOW())
+        WHERE id = ?
+    ", [$reply['thread_id']]);
 
     redirect('/' . $reply['section_slug'] . '/' . $reply['thread_slug']);
 });
@@ -397,13 +408,17 @@ $router->add('GET', '/api/sections', function() {
     API::auth();
     $sections = DB::all("
         SELECT s.id, s.name, s.slug, s.description, s.display_order,
-               COUNT(t.id) AS thread_count, MAX(t.updated_at) AS last_activity
+               SUM(t.created_at <= NOW()) AS thread_count,
+               SUM(t.created_at >  NOW()) AS scheduled_threads,
+               MAX(IF(t.created_at <= NOW(), t.updated_at, NULL)) AS last_activity
         FROM sections s
         LEFT JOIN threads t ON t.section_id = s.id
         GROUP BY s.id
         ORDER BY s.display_order, s.name
     ");
-    API::respond(['sections' => $sections]);
+    foreach ($sections as &$s) { $s['thread_count'] = (int)$s['thread_count']; $s['scheduled_threads'] = (int)$s['scheduled_threads']; }
+    unset($s);
+    API::respond(['sections' => $sections, 'server_time' => API::serverTime()]);
 });
 
 $router->add('GET', '/api/users', function() {
@@ -432,6 +447,9 @@ $router->add('GET', '/api/threads', function() use ($config) {
     $params = [];
     if (!empty($_GET['section'])) { $where[] = 's.slug = ?';    $params[] = $_GET['section']; }
     if (!empty($_GET['user_id'])) { $where[] = 't.user_id = ?'; $params[] = (int)$_GET['user_id']; }
+    $sched = $_GET['scheduled'] ?? 'include';
+    if ($sched === 'only')    $where[] = 't.created_at > NOW()';
+    if ($sched === 'exclude') $where[] = 't.created_at <= NOW()';
     $where = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     $order = match ($_GET['sort'] ?? 'updated') {
         'created' => 't.created_at DESC',
@@ -443,7 +461,10 @@ $router->add('GET', '/api/threads', function() use ($config) {
     $total   = (int)DB::one("SELECT COUNT(*) AS c FROM threads t JOIN sections s ON s.id = t.section_id $where", $params)['c'];
     $threads = DB::all("
         SELECT t.id, t.title, t.slug, t.body, t.user_id, u.username AS author,
-               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at
+               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at,
+               (t.created_at > NOW()) AS scheduled,
+               (SELECT COUNT(*) FROM replies r WHERE r.thread_id = t.id AND r.created_at > NOW()) AS scheduled_replies,
+               (SELECT MAX(r.created_at) FROM replies r WHERE r.thread_id = t.id) AS last_reply_at
         FROM threads t
         JOIN sections s ON s.id = t.section_id
         JOIN users u    ON u.id = t.user_id
@@ -452,6 +473,8 @@ $router->add('GET', '/api/threads', function() use ($config) {
         LIMIT ? OFFSET ?
     ", [...$params, $limit, $offset]);
     foreach ($threads as &$t) {
+        $t['scheduled']         = (bool)$t['scheduled'];
+        $t['scheduled_replies'] = (int)$t['scheduled_replies'];
         $t['excerpt'] = excerpt($t['body'], 300);
         $t['url']     = $config['app_url'] . '/' . $t['section'] . '/' . $t['slug'];
         unset($t['body']);
@@ -464,7 +487,8 @@ $router->add('GET', '/api/threads/{id}', function(array $p) use ($config) {
     API::auth();
     $thread = ctype_digit($p['id']) ? DB::one("
         SELECT t.id, t.title, t.slug, t.body, t.image, t.user_id, u.username AS author,
-               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at
+               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at,
+               (t.created_at > NOW()) AS scheduled
         FROM threads t
         JOIN sections s ON s.id = t.section_id
         JOIN users u    ON u.id = t.user_id
@@ -472,13 +496,17 @@ $router->add('GET', '/api/threads/{id}', function(array $p) use ($config) {
     ", [(int)$p['id']]) : null;
     if (!$thread) API::respond(['error' => 'Thread not found.'], 404);
 
-    $thread['url'] = $config['app_url'] . '/' . $thread['section'] . '/' . $thread['slug'];
+    $thread['url']       = $config['app_url'] . '/' . $thread['section'] . '/' . $thread['slug'];
+    $thread['scheduled'] = (bool)$thread['scheduled'];
     $replies = DB::all("
-        SELECT r.id, r.user_id, u.username AS author, r.body, r.image, r.created_at
+        SELECT r.id, r.user_id, u.username AS author, r.body, r.image, r.created_at,
+               (r.created_at > NOW()) AS scheduled
         FROM replies r JOIN users u ON u.id = r.user_id
         WHERE r.thread_id = ?
         ORDER BY r.created_at ASC, r.id ASC
     ", [$thread['id']]);
+    foreach ($replies as &$r) $r['scheduled'] = (bool)$r['scheduled'];
+    unset($r);
     API::respond(['thread' => $thread, 'replies' => $replies]);
 });
 
@@ -537,7 +565,8 @@ $router->add('POST', '/api/threads', function() use ($config) {
          VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))",
         [$section['id'], $user['id'], $title, $slug, $body, $created, $created]
     );
-    $thread = DB::one("SELECT id, title, slug, created_at, updated_at FROM threads WHERE id = ?", [DB::lastId()]);
+    $thread = DB::one("SELECT id, title, slug, created_at, updated_at, (created_at > NOW()) AS scheduled FROM threads WHERE id = ?", [DB::lastId()]);
+    $thread['scheduled'] = (bool)$thread['scheduled'];
     API::respond(['thread' => $thread + [
         'url'     => $config['app_url'] . '/' . $section['slug'] . '/' . $thread['slug'],
         'section' => $section['slug'],
@@ -578,16 +607,41 @@ $router->add('POST', '/api/replies', function() use ($config) {
     );
     $reply_id = DB::lastId();   // capture before the UPDATE; MySQL resets lastInsertId() after a non-INSERT
     // Activity time only moves forward: a backdated reply inserted after newer
-    // ones must not drag the thread's "Updated" time backwards.
+    // ones must not drag the thread's "Updated" time backwards. A scheduled
+    // (future) reply leaves the thread alone; publish_due() counts it once live.
     DB::execute(
-        "UPDATE threads SET reply_count = reply_count + 1, updated_at = GREATEST(updated_at, COALESCE(?, NOW())) WHERE id = ?",
-        [$created, $thread_id]
+        "UPDATE threads SET reply_count = reply_count + 1, updated_at = GREATEST(updated_at, COALESCE(?, NOW()))
+         WHERE id = ? AND COALESCE(?, NOW()) <= NOW()",
+        [$created, $thread_id, $created]
     );
 
-    $reply = DB::one("SELECT id, thread_id, user_id, created_at FROM replies WHERE id = ?", [$reply_id]);
+    $reply = DB::one("SELECT id, thread_id, user_id, created_at, (created_at > NOW()) AS scheduled FROM replies WHERE id = ?", [$reply_id]);
+    $reply['scheduled'] = (bool)$reply['scheduled'];
     API::respond(['reply' => $reply + [
         'url' => $config['app_url'] . '/' . $thread['section_slug'] . '/' . $thread['slug'],
     ]], 201);
+});
+
+$router->add('POST', '/api/threads/{id}/delete', function(array $p) {
+    API::auth();
+    $id = ctype_digit($p['id']) ? (int)$p['id'] : 0;
+    if (!$id || !DB::one("SELECT id FROM threads WHERE id = ?", [$id])) API::respond(['error' => 'Thread not found.'], 404);
+    DB::execute("DELETE FROM threads WHERE id = ?", [$id]);   // replies cascade
+    API::respond(['deleted' => ['thread_id' => $id]]);
+});
+
+$router->add('POST', '/api/replies/{id}/delete', function(array $p) {
+    API::auth();
+    $id    = ctype_digit($p['id']) ? (int)$p['id'] : 0;
+    $reply = $id ? DB::one("SELECT id, thread_id FROM replies WHERE id = ?", [$id]) : null;
+    if (!$reply) API::respond(['error' => 'Reply not found.'], 404);
+    DB::execute("DELETE FROM replies WHERE id = ?", [$id]);
+    DB::execute("
+        UPDATE threads SET updated_at = updated_at,
+               reply_count = (SELECT COUNT(*) FROM replies r WHERE r.thread_id = threads.id AND r.created_at <= NOW())
+        WHERE id = ?
+    ", [$reply['thread_id']]);
+    API::respond(['deleted' => ['reply_id' => $id, 'thread_id' => (int)$reply['thread_id']]]);
 });
 
 $router->add('POST', '/api/update', function() {
@@ -608,6 +662,7 @@ $router->add('GET', '/sitemap.xml', function() use ($config) {
     $threads  = DB::all("
         SELECT t.slug, t.updated_at, s.slug AS section_slug
         FROM threads t JOIN sections s ON s.id = t.section_id
+        WHERE t.created_at <= NOW()
         ORDER BY t.updated_at DESC
         LIMIT 50000
     ");
@@ -666,14 +721,14 @@ $router->add('GET', '/{slug}', function(array $p) use ($config, $PER_PAGE) {
     if (!$section) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
 
     $page  = max(1, (int)($_GET['page'] ?? 1));
-    $total = (int)DB::one("SELECT COUNT(*) AS c FROM threads WHERE section_id = ?", [$section['id']])['c'];
+    $total = (int)DB::one("SELECT COUNT(*) AS c FROM threads WHERE section_id = ? AND created_at <= NOW()", [$section['id']])['c'];
     $pg    = paginate($total, $PER_PAGE, $page);
 
     $threads = DB::all("
         SELECT t.*, u.username
         FROM threads t
         JOIN users u ON u.id = t.user_id
-        WHERE t.section_id = ?
+        WHERE t.section_id = ? AND t.created_at <= NOW()
         ORDER BY t.updated_at DESC
         LIMIT ? OFFSET ?
     ", [$section['id'], $PER_PAGE, $pg['offset']]);
@@ -722,7 +777,7 @@ $router->add('GET', '/{section}/{thread}', function(array $p) use ($config) {
     $thread = DB::one("
         SELECT t.*, u.username AS author, u.role AS author_role
         FROM threads t JOIN users u ON u.id = t.user_id
-        WHERE t.section_id = ? AND t.slug = ?
+        WHERE t.section_id = ? AND t.slug = ? AND t.created_at <= NOW()
     ", [$section['id'], $p['thread']]);
     if (!$thread) { http_response_code(404); render('404', ['title' => 'Not Found', 'description' => '']); return; }
 
@@ -731,13 +786,14 @@ $router->add('GET', '/{section}/{thread}', function(array $p) use ($config) {
     DB::execute("UPDATE threads SET view_count = view_count + 1, updated_at = updated_at WHERE id = ?", [$thread['id']]);
 
     $page  = max(1, (int)($_GET['page'] ?? 1));
-    $total = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ?", [$thread['id']])['c'];
+    $total = (int)DB::one("SELECT COUNT(*) AS c FROM replies WHERE thread_id = ? AND created_at <= NOW()", [$thread['id']])['c'];
+    $thread['reply_count'] = $total;   // exact even if publish_due() hasn't caught up yet
     $pg    = paginate($total, 30, $page);
 
     $replies = DB::all("
         SELECT r.*, u.username AS author, u.role AS author_role
         FROM replies r JOIN users u ON u.id = r.user_id
-        WHERE r.thread_id = ?
+        WHERE r.thread_id = ? AND r.created_at <= NOW()
         ORDER BY r.created_at ASC
         LIMIT ? OFFSET ?
     ", [$thread['id'], 30, $pg['offset']]);

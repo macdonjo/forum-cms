@@ -135,3 +135,39 @@ function render(string $tpl, array $vars = []): void {
     $content = ob_get_clean();
     require ROOT . '/templates/layout.php';
 }
+
+/**
+ * Catch up thread stats for scheduled replies that have gone live.
+ *
+ * Replies with a future created_at are hidden by the public queries and don't
+ * count toward threads.reply_count / updated_at when inserted. At most once a
+ * minute, recompute both for every thread that gained a visible reply since the
+ * last run (with a 5-minute overlap; the recompute is idempotent).
+ */
+function publish_due(): void {
+    $now  = DB::one("SELECT NOW() AS n")['n'];
+    $last = DB::one("SELECT value FROM settings WHERE `key` = 'publish_last_run'")['value'] ?? null;
+    if ($last && strtotime($now) - strtotime($last) < 60) return;
+
+    DB::execute(
+        "INSERT INTO settings (`key`, `value`) VALUES ('publish_last_run', ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)",
+        [$now]
+    );
+    $since = $last ? date('Y-m-d H:i:s', strtotime($last) - 300) : '1970-01-01 00:00:00';
+
+    // updated_at is assigned explicitly, so ON UPDATE CURRENT_TIMESTAMP won't fire,
+    // and GREATEST() means it never moves backwards.
+    DB::execute("
+        UPDATE threads t
+        JOIN (
+            SELECT r.thread_id, COUNT(*) AS c, MAX(r.created_at) AS m
+            FROM replies r
+            JOIN (SELECT DISTINCT thread_id FROM replies WHERE created_at > ? AND created_at <= ?) d
+              ON d.thread_id = r.thread_id
+            WHERE r.created_at <= ?
+            GROUP BY r.thread_id
+        ) v ON v.thread_id = t.id
+        SET t.reply_count = v.c,
+            t.updated_at  = GREATEST(t.updated_at, v.m)
+    ", [$since, $now, $now]);
+}
