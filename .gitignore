@@ -4,3 +4,4 @@ config.php
 update.log
 .DS_Store
 Thumbs.db
+.env

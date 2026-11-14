@@ -393,6 +393,95 @@ $router->add('POST', '/thread/delete', function() {
 });
 
 // ── API ───────────────────────────────────────────────────────────────────────
+$router->add('GET', '/api/sections', function() {
+    API::auth();
+    $sections = DB::all("
+        SELECT s.id, s.name, s.slug, s.description, s.display_order,
+               COUNT(t.id) AS thread_count, MAX(t.updated_at) AS last_activity
+        FROM sections s
+        LEFT JOIN threads t ON t.section_id = s.id
+        GROUP BY s.id
+        ORDER BY s.display_order, s.name
+    ");
+    API::respond(['sections' => $sections]);
+});
+
+$router->add('GET', '/api/users', function() {
+    API::auth();
+    [$limit, $offset] = API::paging();
+    $where  = '';
+    $params = [];
+    if (!empty($_GET['role'])) { $where = 'WHERE u.role = ?'; $params[] = $_GET['role']; }
+
+    $total = (int)DB::one("SELECT COUNT(*) AS c FROM users u $where", $params)['c'];
+    $users = DB::all("
+        SELECT u.id, u.username, u.email, u.role, u.created_at,
+               (SELECT COUNT(*) FROM threads t WHERE t.user_id = u.id) AS thread_count,
+               (SELECT COUNT(*) FROM replies r WHERE r.user_id = u.id) AS reply_count
+        FROM users u $where
+        ORDER BY u.id ASC
+        LIMIT ? OFFSET ?
+    ", [...$params, $limit, $offset]);
+    API::respond(['users' => $users, 'total' => $total, 'limit' => $limit, 'offset' => $offset]);
+});
+
+$router->add('GET', '/api/threads', function() use ($config) {
+    API::auth();
+    [$limit, $offset] = API::paging();
+    $where  = [];
+    $params = [];
+    if (!empty($_GET['section'])) { $where[] = 's.slug = ?';    $params[] = $_GET['section']; }
+    if (!empty($_GET['user_id'])) { $where[] = 't.user_id = ?'; $params[] = (int)$_GET['user_id']; }
+    $where = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $order = match ($_GET['sort'] ?? 'updated') {
+        'created' => 't.created_at DESC',
+        'oldest'  => 't.created_at ASC',
+        'replies' => 't.reply_count DESC, t.updated_at DESC',
+        default   => 't.updated_at DESC',
+    };
+
+    $total   = (int)DB::one("SELECT COUNT(*) AS c FROM threads t JOIN sections s ON s.id = t.section_id $where", $params)['c'];
+    $threads = DB::all("
+        SELECT t.id, t.title, t.slug, t.body, t.user_id, u.username AS author,
+               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at
+        FROM threads t
+        JOIN sections s ON s.id = t.section_id
+        JOIN users u    ON u.id = t.user_id
+        $where
+        ORDER BY $order
+        LIMIT ? OFFSET ?
+    ", [...$params, $limit, $offset]);
+    foreach ($threads as &$t) {
+        $t['excerpt'] = excerpt($t['body'], 300);
+        $t['url']     = $config['app_url'] . '/' . $t['section'] . '/' . $t['slug'];
+        unset($t['body']);
+    }
+    unset($t);
+    API::respond(['threads' => $threads, 'total' => $total, 'limit' => $limit, 'offset' => $offset]);
+});
+
+$router->add('GET', '/api/threads/{id}', function(array $p) use ($config) {
+    API::auth();
+    $thread = ctype_digit($p['id']) ? DB::one("
+        SELECT t.id, t.title, t.slug, t.body, t.image, t.user_id, u.username AS author,
+               s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at
+        FROM threads t
+        JOIN sections s ON s.id = t.section_id
+        JOIN users u    ON u.id = t.user_id
+        WHERE t.id = ?
+    ", [(int)$p['id']]) : null;
+    if (!$thread) API::respond(['error' => 'Thread not found.'], 404);
+
+    $thread['url'] = $config['app_url'] . '/' . $thread['section'] . '/' . $thread['slug'];
+    $replies = DB::all("
+        SELECT r.id, r.user_id, u.username AS author, r.body, r.image, r.created_at
+        FROM replies r JOIN users u ON u.id = r.user_id
+        WHERE r.thread_id = ?
+        ORDER BY r.created_at ASC, r.id ASC
+    ", [$thread['id']]);
+    API::respond(['thread' => $thread, 'replies' => $replies]);
+});
+
 $router->add('POST', '/api/users', function() {
     API::auth();
     $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
@@ -401,6 +490,7 @@ $router->add('POST', '/api/users', function() {
     $email    = trim($b['email']    ?? '');
     $pass     = $b['password']      ?? '';
     $role     = $b['role']          ?? 'user';
+    $created  = API::timestamp($b['created_at'] ?? null);
 
     if (!in_array($role, ['user','moderator','admin'], true)) $role = 'user';
     if (mb_strlen($username) < 3)                        API::respond(['error' => 'Username must be at least 3 characters.'], 422);
@@ -410,8 +500,8 @@ $router->add('POST', '/api/users', function() {
     if (DB::one("SELECT id FROM users WHERE email = ?",    [$email]))    API::respond(['error' => 'Email already registered.'], 422);
 
     DB::execute(
-        "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
-        [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $role]
+        "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, COALESCE(?, NOW()))",
+        [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $created]
     );
     $user = DB::one("SELECT id, username, email, role, created_at FROM users WHERE id = ?", [DB::lastId()]);
     API::respond(['user' => $user], 201);
@@ -424,6 +514,7 @@ $router->add('POST', '/api/threads', function() use ($config) {
     $title   = trim($b['title']   ?? '');
     $body    = trim($b['body']    ?? '');
     $user_id = (int)($b['user_id'] ?? 0);
+    $created = API::timestamp($b['created_at'] ?? null);
 
     if (!$title) API::respond(['error' => 'title is required.'], 422);
     if (!$body)  API::respond(['error' => 'body is required.'], 422);
@@ -442,10 +533,11 @@ $router->add('POST', '/api/threads', function() use ($config) {
 
     $slug = unique_slug('threads', $title, 'section_id', $section['id']);
     DB::execute(
-        "INSERT INTO threads (section_id, user_id, title, slug, body) VALUES (?, ?, ?, ?, ?)",
-        [$section['id'], $user['id'], $title, $slug, $body]
+        "INSERT INTO threads (section_id, user_id, title, slug, body, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))",
+        [$section['id'], $user['id'], $title, $slug, $body, $created, $created]
     );
-    $thread = DB::one("SELECT id, title, slug, created_at FROM threads WHERE id = ?", [DB::lastId()]);
+    $thread = DB::one("SELECT id, title, slug, created_at, updated_at FROM threads WHERE id = ?", [DB::lastId()]);
     API::respond(['thread' => $thread + [
         'url'     => $config['app_url'] . '/' . $section['slug'] . '/' . $thread['slug'],
         'section' => $section['slug'],
@@ -459,6 +551,7 @@ $router->add('POST', '/api/replies', function() use ($config) {
     $thread_id = (int)($b['thread_id'] ?? 0);
     $body      = trim($b['body'] ?? '');
     $user_id   = (int)($b['user_id'] ?? 0);
+    $created   = API::timestamp($b['created_at'] ?? null);
 
     if (!$body) API::respond(['error' => 'body is required.'], 422);
 
@@ -468,6 +561,9 @@ $router->add('POST', '/api/replies', function() use ($config) {
         WHERE t.id = ?
     ", [$thread_id]) : null;
     if (!$thread) API::respond(['error' => 'Thread not found. Pass thread_id.'], 422);
+    if ($created && strtotime($created) < strtotime($thread['created_at'])) {
+        API::respond(['error' => 'created_at cannot be earlier than the thread (' . $thread['created_at'] . ').'], 422);
+    }
 
     if ($user_id) {
         $user = DB::one("SELECT id FROM users WHERE id = ?", [$user_id]);
@@ -477,13 +573,15 @@ $router->add('POST', '/api/replies', function() use ($config) {
     }
 
     DB::execute(
-        "INSERT INTO replies (thread_id, user_id, body, image) VALUES (?, ?, ?, ?)",
-        [$thread_id, $user['id'], $body, null]
+        "INSERT INTO replies (thread_id, user_id, body, image, created_at) VALUES (?, ?, ?, ?, COALESCE(?, NOW()))",
+        [$thread_id, $user['id'], $body, null, $created]
     );
     $reply_id = DB::lastId();   // capture before the UPDATE; MySQL resets lastInsertId() after a non-INSERT
+    // Activity time only moves forward: a backdated reply inserted after newer
+    // ones must not drag the thread's "Updated" time backwards.
     DB::execute(
-        "UPDATE threads SET reply_count = reply_count + 1, updated_at = NOW() WHERE id = ?",
-        [$thread_id]
+        "UPDATE threads SET reply_count = reply_count + 1, updated_at = GREATEST(updated_at, COALESCE(?, NOW())) WHERE id = ?",
+        [$created, $thread_id]
     );
 
     $reply = DB::one("SELECT id, thread_id, user_id, created_at FROM replies WHERE id = ?", [$reply_id]);

@@ -13,7 +13,7 @@ There is no build step. Every `git push` deploys via the auto-updater on the liv
 curl -s -X POST https://forum.macdonaldmarine.com/api/update \
   -H "Authorization: Bearer <key>"
 ```
-The API key and FTP credentials are stored in Claude's memory at `memory/deploy_credentials.md` — never in the repo.
+The API key is in the local, gitignored `.env` (`FORUM_URL`, `FORUM_API_KEY`). **The repo is public — never commit keys or credentials.**
 
 **Manual fallback** — visiting `https://forum.macdonaldmarine.com/webhook.php` also triggers an update if the API isn't available.
 
@@ -26,7 +26,11 @@ Single-file front controller. All HTTP requests hit `index.php` via `.htaccess` 
 - `src/Auth.php` — session-based auth. Roles: `user`, `moderator`, `admin`. `requireAdmin()` / `requireMod()` exit with 403. Call `Auth::start()` once at boot.
 - `src/helpers.php` — `render()`, `bbcode()`, `excerpt()`, `upload_image()`, `paginate()`, `unique_slug()`, CSRF helpers.
 - `src/Updater.php` — downloads `main.zip` from GitHub, extracts it skipping `config.php` and `uploads/`. `applyZip()` strips the `forum-cms-main/` GitHub prefix automatically.
-- `src/API.php` — Bearer token auth against the `settings` table. Write endpoints: `POST /api/users`, `POST /api/threads`, `POST /api/replies` (each can create content as any `user_id`; threads/replies fall back to the first admin), and `POST /api/update` (triggers the self-updater).
+- `src/API.php` — Bearer token auth against the `settings` table.
+  - Read: `GET /api/sections`, `GET /api/users` (`role`, `limit`, `offset`), `GET /api/threads` (`section`, `user_id`, `sort=updated|created|oldest|replies`, `limit` ≤200, `offset`; returns excerpts), `GET /api/threads/{id}` (full body + all replies).
+  - Write: `POST /api/users`, `POST /api/threads`, `POST /api/replies` (each can create content as any `user_id`; threads/replies fall back to the first admin), and `POST /api/update` (triggers the self-updater).
+  - All three create endpoints accept optional `created_at` (ISO 8601 / strtotime / unix; no future dates) for backdating. A new thread's `updated_at` starts at its `created_at`; a reply moves the thread's `updated_at` forward only (`GREATEST`), and can't predate its thread.
+  - **GET requests must send a `forum_sess` cookie (any value)** or `API::auth()` returns 400 — otherwise Cloudflare would edge-cache the authenticated JSON and serve it to anyone (see Cloudflare section).
 
 Templates use `render('name', $vars)` which extracts vars, captures output into `$content`, then includes `templates/layout.php`. The `$config` global is always available inside templates.
 
