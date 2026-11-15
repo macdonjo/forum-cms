@@ -535,6 +535,29 @@ $router->add('POST', '/api/users', function() {
     API::respond(['user' => $user], 201);
 });
 
+// Update a user's username and/or email. Posts reference users by id, so a
+// rename shows everywhere immediately.
+$router->add('POST', '/api/users/{id}', function(array $p) {
+    API::auth();
+    $id = ctype_digit($p['id']) ? (int)$p['id'] : 0;
+    if (!$id || !DB::one("SELECT id FROM users WHERE id = ?", [$id])) API::respond(['error' => 'User not found.'], 404);
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+
+    if (isset($b['username'])) {
+        $username = trim($b['username']);
+        if (mb_strlen($username) < 3 || mb_strlen($username) > 50) API::respond(['error' => 'Username must be 3-50 characters.'], 422);
+        if (DB::one("SELECT id FROM users WHERE username = ? AND id != ?", [$username, $id])) API::respond(['error' => 'Username already taken.'], 422);
+        DB::execute("UPDATE users SET username = ? WHERE id = ?", [$username, $id]);
+    }
+    if (isset($b['email'])) {
+        $email = trim($b['email']);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) API::respond(['error' => 'Invalid email address.'], 422);
+        if (DB::one("SELECT id FROM users WHERE email = ? AND id != ?", [$email, $id])) API::respond(['error' => 'Email already registered.'], 422);
+        DB::execute("UPDATE users SET email = ? WHERE id = ?", [$email, $id]);
+    }
+    API::respond(['user' => DB::one("SELECT id, username, email, role, created_at FROM users WHERE id = ?", [$id])]);
+});
+
 $router->add('POST', '/api/threads', function() use ($config) {
     API::auth();
     $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;

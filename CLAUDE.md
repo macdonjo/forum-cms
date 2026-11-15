@@ -28,7 +28,7 @@ Single-file front controller. All HTTP requests hit `index.php` via `.htaccess` 
 - `src/Updater.php` — downloads `main.zip` from GitHub, extracts it skipping `config.php` and `uploads/`. `applyZip()` strips the `forum-cms-main/` GitHub prefix automatically.
 - `src/API.php` — Bearer token auth against the `settings` table.
   - Read: `GET /api/sections`, `GET /api/users` (`role`, `limit`, `offset`), `GET /api/threads` (`section`, `user_id`, `sort=updated|created|oldest|replies`, `limit` ≤200, `offset`; returns excerpts), `GET /api/threads/{id}` (full body + all replies).
-  - Write: `POST /api/users`, `POST /api/threads`, `POST /api/replies` (each can create content as any `user_id`; threads/replies fall back to the first admin), and `POST /api/update` (triggers the self-updater).
+  - Write: `POST /api/users`, `POST /api/users/{id}` (rename: `username` and/or `email`), `POST /api/threads`, `POST /api/replies` (each can create content as any `user_id`; threads/replies fall back to the first admin), and `POST /api/update` (triggers the self-updater).
   - All three create endpoints accept optional `created_at` (ISO 8601 / strtotime / unix; up to 1 year ahead). A new thread's `updated_at` starts at its `created_at`; a reply moves the thread's `updated_at` forward only (`GREATEST`), and can't predate its thread.
   - Delete: `POST /api/threads/{id}/delete` (cascades replies), `POST /api/replies/{id}/delete`. POST, not DELETE, to stay clear of host/WAF method filtering.
   - GET responses flag `scheduled` on threads/replies; `GET /api/threads?scheduled=include|only|exclude`; `GET /api/sections` returns `server_time` (PHP vs MySQL clocks).
@@ -44,7 +44,7 @@ Templates use `render('name', $vars)` which extracts vars, captures output into 
 
 **Migrations** — schema changes go in `index.php` as idempotent SQL (`ALTER TABLE ... IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE`). Never use `array_column($result, 0)` for `SHOW TABLES` — use `array_column($result, 'Field')` for `SHOW COLUMNS` or check `!empty()` on the result.
 
-**Scheduled content** — a future `created_at` (API only) schedules a thread or reply. Every public query filters `created_at <= NOW()` (home counts, section list, thread page + replies, sitemap, web reply target); **any new public query must do the same.** `threads.reply_count` / `updated_at` hold *visible* values only: a scheduled reply doesn't touch them on insert, and `publish_due()` (helpers.php, run on each origin request, throttled to 1/min via the `publish_last_run` setting) recomputes them for threads whose scheduled replies have gone live. The thread page computes its reply count live, so it is exact even before that catch-up. Cloudflare's 8h edge cache means anonymous visitors may see scheduled items late, never early.
+**Scheduled content** — a future `created_at` (API only) schedules a thread or reply. Every public query filters `created_at <= NOW()` (home counts, section list, thread page + replies, sitemap, web reply target); **any new public query must do the same.** `threads.reply_count` / `updated_at` hold *visible* values only: a scheduled reply doesn't touch them on insert, and `publish_due()` (helpers.php, run on each origin request, throttled to 1/min via the `publish_last_run` setting) recomputes them for threads whose scheduled replies have gone live. The thread page computes its reply count live, so it is exact even before that catch-up. Cloudflare's 5-min forum edge cache means anonymous visitors may see scheduled items up to ~5 min late, never early.
 
 **`updated_at` gotcha** — `threads.updated_at` is `ON UPDATE CURRENT_TIMESTAMP`, so *any* `UPDATE` to a thread row auto-bumps it (which drives the "Updated" column / activity sort). An `UPDATE` that must not count as activity — e.g. the view-count increment — has to set `updated_at = updated_at` explicitly to suppress the auto-bump.
 
@@ -63,7 +63,14 @@ Templates use `render('name', $vars)` which extracts vars, captures output into 
 
 ## Cloudflare / caching
 
-Cloudflare sits in front with a **"Cache All Pages" Cache Rule that caches full HTML at the edge (8h TTL) and overrides the origin's `Cache-Control`** — sending `no-store` from PHP does **not** stop edge caching, and Cloudflare re-caches even on a MISS. So a caching problem here **cannot be fixed in code**; it must be fixed in the Cloudflare Cache Rules. Cache Rules evaluate top→bottom, later match wins.
+Cloudflare sits in front. Cache Rules (zone `macdonaldmarine.com`, evaluated top→bottom, later match wins) **override the origin's `Cache-Control`** — sending `no-store` from PHP does **not** stop edge caching. So a caching problem here **cannot be fixed in code**; it must be fixed in the Cloudflare Cache Rules:
+
+1. **"Cache All Pages"** — the main site: edge 24h, browser 8h, query strings ignored. It **excludes** `forum.macdonaldmarine.com` (`http.host ne ...`).
+2. **"Forum: short cache"** — forum host only: edge **5 min**, browser **1 min**, default cache key (so `?page=N` is cached separately). New/scheduled posts show to anonymous visitors within ~5 min. (A custom cache key isn't allowed on this plan, which is why the forum is excluded from rule 1 rather than overridden.)
+3. "webcams" — no cache.
+4. "Bypass cache for sessions and auth" — see below.
+
+API access: `CF_API_TOKEN`, `CF_ACCOUNT_ID`, `CF_ZONE_ID` are in the gitignored `.env` (token scope: this zone, Cache Purge + cache rules edit). The cache-settings ruleset id is `406b3313a28f4d51be132d685e94d577`. Purge the forum: `POST /zones/$CF_ZONE_ID/purge_cache {"hosts":["forum.macdonaldmarine.com"]}`.
 
 The rule that makes auth work is **"Bypass cache for sessions and auth"**: bypass when `http.cookie contains "forum_sess"` OR path is `/login`/`/register`. Without it, cached `/login` serves a stale CSRF token + strips `Set-Cookie` ("Invalid CSRF token"), and logged-in users are served the cached anonymous page. Cookieless requests (Googlebot, first-time readers) still cache, preserving SEO.
 
