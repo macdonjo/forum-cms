@@ -645,6 +645,33 @@ $router->add('POST', '/api/replies', function() use ($config) {
     ]], 201);
 });
 
+// Edit a thread's title/body or a reply's body. Doesn't bump updated_at or
+// change the slug, so the thread keeps its place and URL.
+$router->add('POST', '/api/threads/{id}', function(array $p) {
+    API::auth();
+    $id = ctype_digit($p['id']) ? (int)$p['id'] : 0;
+    if (!$id || !DB::one("SELECT id FROM threads WHERE id = ?", [$id])) API::respond(['error' => 'Thread not found.'], 404);
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    foreach (['title' => 255, 'body' => 65535] as $field => $max) {
+        if (!isset($b[$field])) continue;
+        $v = trim($b[$field]);
+        if ($v === '' || strlen($v) > $max) API::respond(['error' => "Invalid $field."], 422);
+        DB::execute("UPDATE threads SET $field = ?, updated_at = updated_at WHERE id = ?", [$v, $id]);
+    }
+    API::respond(['thread' => DB::one("SELECT id, title, body, created_at, updated_at FROM threads WHERE id = ?", [$id])]);
+});
+
+$router->add('POST', '/api/replies/{id}', function(array $p) {
+    API::auth();
+    $id = ctype_digit($p['id']) ? (int)$p['id'] : 0;
+    if (!$id || !DB::one("SELECT id FROM replies WHERE id = ?", [$id])) API::respond(['error' => 'Reply not found.'], 404);
+    $b = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $body = trim($b['body'] ?? '');
+    if ($body === '') API::respond(['error' => 'Body is required.'], 422);
+    DB::execute("UPDATE replies SET body = ? WHERE id = ?", [$body, $id]);
+    API::respond(['reply' => DB::one("SELECT id, thread_id, body, created_at FROM replies WHERE id = ?", [$id])]);
+});
+
 $router->add('POST', '/api/threads/{id}/delete', function(array $p) {
     API::auth();
     $id = ctype_digit($p['id']) ? (int)$p['id'] : 0;
