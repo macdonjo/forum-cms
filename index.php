@@ -30,6 +30,14 @@ if (empty($_cols)) {
 }
 unset($_cols);
 
+// Auto-migrate: source column — 'web' (made on the site) or 'api' (made through the API)
+foreach (['users', 'threads', 'replies'] as $_t) {
+    if (!DB::all("SHOW COLUMNS FROM $_t LIKE 'source'")) {
+        DB::execute("ALTER TABLE $_t ADD COLUMN source ENUM('web','api') NOT NULL DEFAULT 'web'");
+    }
+}
+unset($_t);
+
 // Auto-migrate: settings table + API key
 DB::execute("CREATE TABLE IF NOT EXISTS settings (
     `key`  VARCHAR(100) NOT NULL PRIMARY KEY,
@@ -271,7 +279,7 @@ $router->add('GET', '/logout', function() {
 $router->add('GET', '/cp', function() use ($config) {
     Auth::requireAdmin();
     $sections = DB::all("SELECT * FROM sections ORDER BY display_order, name");
-    $users    = DB::all("SELECT id, username, email, role, created_at FROM users ORDER BY created_at ASC");
+    $users    = DB::all("SELECT id, username, email, role, source, created_at FROM users ORDER BY created_at ASC");
     $api_key  = DB::one("SELECT value FROM settings WHERE `key` = 'api_key'")['value'] ?? '';
     render('admin', [
         'sections'    => $sections,
@@ -430,7 +438,7 @@ $router->add('GET', '/api/users', function() {
 
     $total = (int)DB::one("SELECT COUNT(*) AS c FROM users u $where", $params)['c'];
     $users = DB::all("
-        SELECT u.id, u.username, u.email, u.role, u.created_at,
+        SELECT u.id, u.username, u.email, u.role, u.source, u.created_at,
                (SELECT COUNT(*) FROM threads t WHERE t.user_id = u.id) AS thread_count,
                (SELECT COUNT(*) FROM replies r WHERE r.user_id = u.id) AS reply_count
         FROM users u $where
@@ -460,7 +468,7 @@ $router->add('GET', '/api/threads', function() use ($config) {
 
     $total   = (int)DB::one("SELECT COUNT(*) AS c FROM threads t JOIN sections s ON s.id = t.section_id $where", $params)['c'];
     $threads = DB::all("
-        SELECT t.id, t.title, t.slug, t.body, t.user_id, u.username AS author,
+        SELECT t.id, t.title, t.slug, t.body, t.user_id, u.username AS author, t.source,
                s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at,
                (t.created_at > NOW()) AS scheduled,
                (SELECT COUNT(*) FROM replies r WHERE r.thread_id = t.id AND r.created_at > NOW()) AS scheduled_replies,
@@ -486,7 +494,7 @@ $router->add('GET', '/api/threads', function() use ($config) {
 $router->add('GET', '/api/threads/{id}', function(array $p) use ($config) {
     API::auth();
     $thread = ctype_digit($p['id']) ? DB::one("
-        SELECT t.id, t.title, t.slug, t.body, t.image, t.user_id, u.username AS author,
+        SELECT t.id, t.title, t.slug, t.body, t.image, t.user_id, u.username AS author, t.source,
                s.slug AS section, t.reply_count, t.view_count, t.created_at, t.updated_at,
                (t.created_at > NOW()) AS scheduled
         FROM threads t
@@ -499,7 +507,7 @@ $router->add('GET', '/api/threads/{id}', function(array $p) use ($config) {
     $thread['url']       = $config['app_url'] . '/' . $thread['section'] . '/' . $thread['slug'];
     $thread['scheduled'] = (bool)$thread['scheduled'];
     $replies = DB::all("
-        SELECT r.id, r.user_id, u.username AS author, r.body, r.image, r.created_at,
+        SELECT r.id, r.user_id, u.username AS author, r.body, r.image, r.created_at, r.source,
                (r.created_at > NOW()) AS scheduled
         FROM replies r JOIN users u ON u.id = r.user_id
         WHERE r.thread_id = ?
@@ -528,7 +536,7 @@ $router->add('POST', '/api/users', function() {
     if (DB::one("SELECT id FROM users WHERE email = ?",    [$email]))    API::respond(['error' => 'Email already registered.'], 422);
 
     DB::execute(
-        "INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, COALESCE(?, NOW()))",
+        "INSERT INTO users (username, email, password_hash, role, created_at, source) VALUES (?, ?, ?, ?, COALESCE(?, NOW()), 'api')",
         [$username, $email, password_hash($pass, PASSWORD_DEFAULT), $role, $created]
     );
     $user = DB::one("SELECT id, username, email, role, created_at FROM users WHERE id = ?", [DB::lastId()]);
@@ -555,7 +563,16 @@ $router->add('POST', '/api/users/{id}', function(array $p) {
         if (DB::one("SELECT id FROM users WHERE email = ? AND id != ?", [$email, $id])) API::respond(['error' => 'Email already registered.'], 422);
         DB::execute("UPDATE users SET email = ? WHERE id = ?", [$email, $id]);
     }
-    API::respond(['user' => DB::one("SELECT id, username, email, role, created_at FROM users WHERE id = ?", [$id])]);
+    // Backfill: mark an account (and, with apply_to_posts, everything it posted) as web/api.
+    if (isset($b['source'])) {
+        if (!in_array($b['source'], ['web', 'api'], true)) API::respond(['error' => "source must be 'web' or 'api'."], 422);
+        DB::execute("UPDATE users SET source = ? WHERE id = ?", [$b['source'], $id]);
+        if (!empty($b['apply_to_posts'])) {
+            DB::execute("UPDATE threads SET source = ?, updated_at = updated_at WHERE user_id = ?", [$b['source'], $id]);
+            DB::execute("UPDATE replies SET source = ? WHERE user_id = ?", [$b['source'], $id]);
+        }
+    }
+    API::respond(['user' => DB::one("SELECT id, username, email, role, source, created_at FROM users WHERE id = ?", [$id])]);
 });
 
 $router->add('POST', '/api/threads', function() use ($config) {
@@ -584,8 +601,8 @@ $router->add('POST', '/api/threads', function() use ($config) {
 
     $slug = unique_slug('threads', $title, 'section_id', $section['id']);
     DB::execute(
-        "INSERT INTO threads (section_id, user_id, title, slug, body, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()))",
+        "INSERT INTO threads (section_id, user_id, title, slug, body, created_at, updated_at, source)
+         VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()), COALESCE(?, NOW()), 'api')",
         [$section['id'], $user['id'], $title, $slug, $body, $created, $created]
     );
     $thread = DB::one("SELECT id, title, slug, created_at, updated_at, (created_at > NOW()) AS scheduled FROM threads WHERE id = ?", [DB::lastId()]);
@@ -625,7 +642,7 @@ $router->add('POST', '/api/replies', function() use ($config) {
     }
 
     DB::execute(
-        "INSERT INTO replies (thread_id, user_id, body, image, created_at) VALUES (?, ?, ?, ?, COALESCE(?, NOW()))",
+        "INSERT INTO replies (thread_id, user_id, body, image, created_at, source) VALUES (?, ?, ?, ?, COALESCE(?, NOW()), 'api')",
         [$thread_id, $user['id'], $body, null, $created]
     );
     $reply_id = DB::lastId();   // capture before the UPDATE; MySQL resets lastInsertId() after a non-INSERT

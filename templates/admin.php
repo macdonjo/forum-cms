@@ -92,7 +92,7 @@
         <tbody>
         <?php foreach ($users as $u): ?>
         <tr>
-            <td><strong><?= h($u['username']) ?></strong><?= role_badge($u['role']) ?></td>
+            <td><strong><?= h($u['username']) ?></strong><?= role_badge($u['role']) ?><?php if (($u['source'] ?? 'web') === 'api'): ?> <span title="Created through the API (seeded account)" style="font-size:.7rem;padding:1px 5px;border-radius:3px;background:#eef;color:#447">API</span><?php endif; ?></td>
             <td style="font-size:.85rem;color:#666"><?= h($u['email']) ?></td>
             <td><?= h($u['role']) ?></td>
             <td style="font-size:.85rem;color:#666"><?= date('M j, Y', strtotime($u['created_at'])) ?></td>
